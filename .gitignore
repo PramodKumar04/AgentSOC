@@ -36,3 +36,8 @@ Thumbs.db
 
 # Processed datasets are regenerated from inputs via scripts/ingest_lanl.py
 data/processed/
+
+# LANL raw data extracted into the project root — never commit (73 GB)
+/auth.txt/
+/redteam.txt/
+/*.txt.gz

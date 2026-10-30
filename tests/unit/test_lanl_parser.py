@@ -44,7 +44,9 @@ class TestValidRecords:
         event = parse("3,U22@DOM1,,C625,C625,?,,LogOff,Success")
         assert event.dst_user is None and event.auth_type is None and event.logon_type is None
 
-    @pytest.mark.parametrize("orientation", ["LogOn", "LogOff", "TGS", "TGT", "AuthMap"])
+    @pytest.mark.parametrize(
+        "orientation", ["LogOn", "LogOff", "TGS", "TGT", "AuthMap", "ScreenLock", "ScreenUnlock"]
+    )
     def test_all_lanl_orientations(self, orientation):
         line = f"1,C1$@DOM1,C1$@DOM1,C1,C2,Kerberos,?,{orientation},Success"
         assert parse(line).orientation.value == orientation
@@ -156,3 +158,17 @@ class TestRejections:
 )
 def test_event_id_prefix_is_identifier_safe(name, prefix):
     assert event_id_prefix(name) == prefix
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Verbatim LANL auth.txt.gz lines 29411899 and 29417049, rejected before the fix.
+        "149757,U3458@DOM1,U3458@DOM1,C8851,C8851,?,?,ScreenUnlock,Success",
+        "149774,U6308@DOM1,U6308@DOM1,C14356,C14356,?,?,ScreenLock,Success",
+    ],
+)
+def test_regression_real_lanl_screen_lock_records_are_accepted(line):
+    event = parse(line)
+    assert isinstance(event, AuthEvent)
+    assert event.auth_type is None and event.logon_type is None

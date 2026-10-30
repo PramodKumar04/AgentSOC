@@ -12,7 +12,7 @@ This repository is an independent implementation; results reported in the paper 
 
 ## Status
 
-Phases 0 (foundation), 1 (ingestion) and 2 (detection & correlation) complete. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what
+Phases 0–2 complete (Phase 2 validated on sampled real LANL 2015 data); **demo MVP** adds the Investigator Agent (Groq LLM + deterministic fallback) and a Streamlit SOC dashboard — see [DEMO_GUIDE.md](DEMO_GUIDE.md). See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what
 works today and [ARCHITECTURE.md](ARCHITECTURE.md) for the design.
 
 ## Setup (Windows, Python 3.11+)
@@ -73,6 +73,34 @@ assumptions and limitations are documented in [ARCHITECTURE.md](ARCHITECTURE.md)
 
 Detections are heuristic indicators of suspicious behaviour, not confirmation of compromise, and
 results on synthetic data do not measure real-world detection accuracy.
+
+## Run the SOC dashboard
+
+```powershell
+streamlit run app/streamlit_app.py
+```
+
+Synthetic demo data is built automatically on first launch. Select an incident and click
+**Investigate with AI**; the result shows whether Groq or the deterministic fallback produced it.
+Full walkthrough, fallback behaviour and scope: [DEMO_GUIDE.md](DEMO_GUIDE.md).
+
+## Validate on real LANL 2015 data
+
+```powershell
+python scripts/validate_lanl.py --archive "$env:USERPROFILE/Downloads/auth.txt.gz" `
+    --redteam "$env:USERPROFILE/Downloads/redteam.txt.gz" `
+    --out data/processed/lanl_validation --scan-days 3 `
+    --run first_100k:0:100000 --run first_500k:0:500000 `
+    --run redteam_window:29400000:400000 `
+    --run redteam_window_half_baseline:29400000:400000:half_window
+```
+
+Writes `ingestion_summary.json`, `detection_summary.json`, `rule_analysis.json`,
+`performance_metrics.json` and `validation_report.md`. The archive is only read. This evaluates
+behaviour on sampled windows; it does **not** establish real-world detection accuracy.
+Key result: the default 2-day baseline needs ~33.3M LANL lines, which the current in-memory
+pipeline cannot hold on an 8 GB machine, so baseline-dependent rules are not validated at
+default settings (details in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)).
 
 ## Layout
 

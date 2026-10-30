@@ -50,7 +50,7 @@ branch, so a framework would add indirection without adding capability.
 | Perception: Alert Normalization | `perception/lanl`, `perception/quality`, `store/datasets` | **Done — Phase 1** (LANL-format auth logs) |
 | Perception: Situational Contextualization | `detection/baseline` (per-user host profiles); asset context from topology | **Partial — Phase 2** (behavioural baseline only); asset context Phase 4 |
 | Perception: Noise Reduction | `detection/engine` (exclusion, duplicate collapse), `detection/correlate` | **Done — Phase 2** |
-| Agentic Reasoning: NCE | `investigator/` | Planned — Phase 3 |
+| Agentic Reasoning: NCE | `investigator/` | **MVP done** — Groq LLM + grounding + deterministic fallback |
 | Agentic Reasoning: SSE | `graph/` | Planned — Phase 4 |
 | Agentic Reasoning: RSEM (Eq. 1) | `risk/` | Contract done (`ActionScore`); logic Phase 5 |
 | Action: Adaptive Playbook Generator | `risk/` ranking + `response/` | Planned — Phases 5/7 |
@@ -70,7 +70,7 @@ interface change: update every consumer and test.
 
 | Contract | Producer → Consumer | Key invariants enforced |
 |---|---|---|
-| `AuthEvent` | L1 → all | LANL auth.txt field set; tz-aware time; safe identifiers; `raw_ref` back to source line |
+| `AuthEvent` | L1 → all | LANL auth.txt field set; tz-aware time; safe identifiers; `raw_ref` back to source line; orientations LogOn/LogOff/TGS/TGT/AuthMap/ScreenLock/ScreenUnlock (last two added after LANL validation) |
 | `Finding` | detectors → correlator | ≥1 event; time window ordered; `metrics` (observations) separate from `description` (inference) |
 | `Incident` | L1 → L2–5 | findings cite only the incident's events and lie inside its window; `rule_ids` = findings' rules; ≥1 provenance; severity + rationale; benign explanations, limitations, missing information |
 | `Hypothesis` | L2 → L3/L4 | confidence ∈ [0,1]; ATT&CK IDs `T####(.###)`; benign ⇒ no techniques; an event cannot both support and contradict |
@@ -271,7 +271,28 @@ hashes and output hashes.
 
 ---
 
-## 10. Directory layout
+## 10. Investigator Agent and dashboard (demo MVP)
+
+```
+Incident + verified evidence events
+   ▼ prompts.py: system rules + <incident_data> JSON block (untrusted), injection flagging
+LLMProvider (Groq) ──text──► grounding.py: JSON parse → schema → cited IDs ⊆ incident,
+   │                          ≥1 MALICIOUS + ≥1 BENIGN, ATT&CK format, telemetry-claim flags
+   │   invalid → 1 repair round (errors fed back) → still invalid ─┐
+   │   timeout / 429 / auth / unreachable ─────────────────────────┤
+   ▼                                                               ▼
+InvestigationResult (source=llm)                      fallback.py (source=fallback)
+   ▼ store.py: saved per incident SHA-256 → dashboard (Streamlit), never re-called on refresh
+```
+
+* The agent never raises for LLM problems; the result always states its provider.
+* `is_proof_of_compromise: Literal[False]`: the contract cannot express proof.
+* Fallback confidences are fixed, documented heuristics (`fallback.py` docstring).
+* Dashboard data comes only from hash-verified outputs; evidence is streamed by ID.
+
+---
+
+## 11. Directory layout
 
 ```
 src/agentsoc/
@@ -284,10 +305,14 @@ src/agentsoc/
                       engine, inputs, report                        [Phase 2]
   data_gen/           scenarios.py (synthetic LANL-format)          [Phase 2]
   store/              datasets.py [Phase 1], detections.py [Phase 2]
+  evaluation/         measure, lanl_validation, report, validate    [Phase 2 validation;
+                      reads outputs only, never feeds labels back]
   cli.py              command-line entry points
   # created in their own phases — never as empty stubs:
-  investigator/  graph/  risk/  response/  pipeline.py
-app/                  Streamlit dashboard (Phase 6)
+  investigator/       agent, prompts, grounding, fallback, store, llm/{base,groq}  [demo MVP]
+  app_data.py         dashboard data access (verified sources)       [demo MVP]
+  graph/  risk/  response/  pipeline.py
+app/                  Streamlit SOC dashboard (demo MVP)
 config/               detection.json (Phase 2); topology/policy (Phases 4–5)
 data/samples/         small hand-written / generated inputs (committed, provenance in README)
 data/raw/             LANL etc. (gitignored)

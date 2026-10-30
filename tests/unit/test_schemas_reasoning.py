@@ -14,7 +14,7 @@ from agentsoc.schemas import (
     PathValidation,
     RiskComponent,
 )
-from tests.conftest import hypothesis_data, investigation_data
+from tests.conftest import conclusion_data, hypothesis_data, investigation_data
 
 
 class TestHypothesis:
@@ -140,3 +140,43 @@ class TestIncidentRisk:
         component = RiskComponent(name="x", value=0.5, weight=1, explanation="e")
         with pytest.raises(ValidationError):
             IncidentRiskAssessment(incident_id="I", score=score, band="LOW", components=[component])
+
+
+class TestInvestigationContractExtensions:
+    def test_model_ids_with_slash_are_accepted(self, investigation):
+        assert investigation.model == "openai/gpt-oss-120b"
+
+    @pytest.mark.parametrize("model", ["bad model", "a;b", "x" * 129])
+    def test_unsafe_model_ids_rejected(self, model):
+        with pytest.raises(ValidationError):
+            InvestigationResult(**investigation_data(model=model))
+
+    def test_conclusion_cannot_claim_proof(self):
+        with pytest.raises(ValidationError):
+            InvestigationResult(**investigation_data(
+                conclusion=conclusion_data(is_proof_of_compromise=True)))
+
+    @pytest.mark.parametrize(
+        ("overrides", "message"),
+        [
+            ({"most_plausible_hypothesis_id": "H9"}, "unknown most plausible"),
+            ({"alternative_hypothesis_ids": ["H9"]}, "unknown alternative"),
+            ({"alternative_hypothesis_ids": ["H1"]}, "cannot also be an alternative"),
+        ],
+    )
+    def test_conclusion_references_checked(self, overrides, message):
+        with pytest.raises(ValidationError, match=message):
+            InvestigationResult(**investigation_data(conclusion=conclusion_data(**overrides)))
+
+    def test_conclusion_requires_next_steps(self):
+        with pytest.raises(ValidationError):
+            InvestigationResult(**investigation_data(conclusion=conclusion_data(next_steps=[])))
+
+    def test_evidence_notes_must_reference_cited_events(self):
+        notes = [{"event_id": "EVT-9999", "relevance": "not cited"}]
+        with pytest.raises(ValidationError, match="uncited events"):
+            Hypothesis(**hypothesis_data(evidence_notes=notes))
+
+    def test_incident_hash_format(self):
+        with pytest.raises(ValidationError):
+            InvestigationResult(**investigation_data(incident_sha256="xyz"))

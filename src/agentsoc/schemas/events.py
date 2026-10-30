@@ -22,6 +22,10 @@ class AuthOrientation(StrEnum):
     TGS = "TGS"
     TGT = "TGT"
     AUTHMAP = "AuthMap"
+    # Present in real LANL auth.txt (6,550 / 6,092 records in days 0-2) but missing from
+    # the original contract; found during LANL validation, where they were wrongly rejected.
+    SCREEN_LOCK = "ScreenLock"
+    SCREEN_UNLOCK = "ScreenUnlock"
     UNKNOWN = "?"
 
 

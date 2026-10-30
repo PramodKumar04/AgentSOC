@@ -107,13 +107,29 @@ def benign_hypothesis() -> Hypothesis:
     )
 
 
+def conclusion_data(**overrides: Any) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "most_plausible_hypothesis_id": "H1",
+        "summary": "Credential misuse is the most plausible explanation.",
+        "confidence": 0.6,
+        "uncertainty": "Authentication logs alone cannot confirm who used the account.",
+        "alternative_hypothesis_ids": ["H3"],
+        "next_steps": ["Ask the user whether they logged in from WS-FIN-07."],
+        "evidence_gaps": ["MFA logs"],
+    }
+    data.update(overrides)
+    return data
+
+
 def investigation_data(**overrides: Any) -> dict[str, Any]:
     data: dict[str, Any] = {
         "incident_id": "INC-0001",
+        "incident_sha256": "a" * 64,
         "hypotheses": [Hypothesis(**hypothesis_data()), benign_hypothesis()],
+        "conclusion": conclusion_data(),
         "source": InvestigationSource.LLM,
         "provider": "groq",
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
         "latency_ms": 480.0,
         "created_at": T0,
     }
