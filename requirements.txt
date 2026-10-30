@@ -1,0 +1,10 @@
+# Runtime dependencies — exact versions verified on Python 3.11.5 (2026-10-30).
+pandas==3.1.0
+numpy==2.4.6
+pydantic==2.14.2
+pydantic-settings==2.16.2
+python-dotenv==1.2.4
+networkx==3.6.1
+openai==3.41.0
+streamlit==1.66.1
+plotly==7.1.0

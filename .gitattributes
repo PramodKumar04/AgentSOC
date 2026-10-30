@@ -1,0 +1,2 @@
+# Keep sample inputs byte-exact on every platform so their SHA-256 is reproducible.
+data/samples/*.txt -text

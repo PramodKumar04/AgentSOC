@@ -1,0 +1,75 @@
+{
+  "baseline_seconds": 172800,
+  "access_orientations": [
+    "LogOn"
+  ],
+  "failure_orientations": [
+    "LogOn",
+    "TGT",
+    "TGS"
+  ],
+  "excluded_user_patterns": [
+    ".+\\$@.+",
+    "ANONYMOUS LOGON@.+",
+    "(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)@.+"
+  ],
+  "admin_users": [
+    "dave.it@CORP"
+  ],
+  "collapse_exact_duplicates": true,
+  "correlation_gap_seconds": 3600,
+  "failure_burst": {
+    "enabled": true,
+    "min_failures": 5,
+    "window_seconds": 600,
+    "severity": "MEDIUM"
+  },
+  "fail_then_success": {
+    "enabled": true,
+    "min_failures": 3,
+    "window_seconds": 600,
+    "severity": "HIGH"
+  },
+  "new_src_host": {
+    "enabled": true,
+    "severity": "LOW"
+  },
+  "new_dst_host": {
+    "enabled": true,
+    "severity": "LOW"
+  },
+  "multi_host_spread": {
+    "enabled": true,
+    "min_new_hosts": 3,
+    "window_seconds": 3600,
+    "severity": "MEDIUM"
+  },
+  "lateral_chain": {
+    "enabled": true,
+    "min_hops": 2,
+    "max_hop_gap_seconds": 1800,
+    "severity": "HIGH"
+  },
+  "sensitive_host_access": {
+    "enabled": true,
+    "hosts": [
+      "DB-FIN-01"
+    ],
+    "severity": "HIGH"
+  },
+  "severity_policy": {
+    "points": {
+      "FAILURE_BURST": 2,
+      "FAIL_THEN_SUCCESS": 3,
+      "NEW_SRC_HOST": 1,
+      "NEW_DST_HOST": 1,
+      "MULTI_HOST_SPREAD": 2,
+      "LATERAL_CHAIN": 3,
+      "SENSITIVE_HOST_ACCESS": 3
+    },
+    "medium_at": 3,
+    "high_at": 5,
+    "critical_at": 8,
+    "downgrade_admin_users": true
+  }
+}

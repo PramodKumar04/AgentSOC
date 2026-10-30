@@ -1,0 +1,38 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Data: raw datasets (e.g. LANL) and runtime databases stay local
+data/raw/
+data/*.db
+data/*.db-journal
+logs/
+
+# Reference paper: arXiv licence does not grant redistribution; link to it instead
+docs/reference/*.pdf
+*.pdf
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Processed datasets are regenerated from inputs via scripts/ingest_lanl.py
+data/processed/

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentsoc"
+version = "0.3.0"
+description = "Multi-layer agentic AI research prototype for authentication-centric SOC automation."
+readme = "README.md"
+requires-python = ">=3.11"
+# Runtime pins live in requirements.txt; these are the minimum compatible ranges.
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "networkx>=3.2",
+    "openai>=1.30",
+    "streamlit>=1.35",
+    "plotly>=5.20",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "live: calls a real external API; skipped unless credentials are configured",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "S", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
