@@ -4,7 +4,6 @@ valid `InvestigationResult` whose `source`/`provider` say what produced it."""
 
 from __future__ import annotations
 
-import hashlib
 import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -12,19 +11,29 @@ from datetime import UTC, datetime
 from pydantic import ValidationError
 
 from agentsoc.config import Settings
+from agentsoc.graph.proposed import (
+    StructuralEvidence,
+    assessment_sha256,
+    validate_proposed_path,
+)
 from agentsoc.investigator.fallback import fallback_investigation
 from agentsoc.investigator.grounding import InvestigationValidationError, parse_and_ground
 from agentsoc.investigator.llm.base import LLMError, LLMInvalidResponseError, LLMProvider
 from agentsoc.investigator.prompts import SYSTEM_PROMPT, build_user_prompt, injection_warnings
 from agentsoc.logging_setup import get_logger
-from agentsoc.schemas import AuthEvent, Incident, InvestigationResult, InvestigationSource
+from agentsoc.schemas import (
+    AuthEvent,
+    Hypothesis,
+    Incident,
+    InvestigationResult,
+    InvestigationSource,
+    PathValidation,
+)
+from agentsoc.schemas.incidents import incident_sha256
 
 logger = get_logger(__name__)
 FALLBACK_PROVIDER = "deterministic"
-
-
-def incident_sha256(incident: Incident) -> str:
-    return hashlib.sha256(incident.model_dump_json().encode("utf-8")).hexdigest()
+__all__ = ["FALLBACK_PROVIDER", "InvestigatorAgent", "build_provider", "incident_sha256"]
 
 
 def build_provider(settings: Settings) -> tuple[LLMProvider | None, str | None]:
@@ -43,6 +52,13 @@ def _short(text: str) -> str:
     return text if len(text) <= 300 else text[:297] + "..."
 
 
+def _validate_proposals(
+    hypotheses: list[Hypothesis], structural: StructuralEvidence | None
+) -> list[PathValidation]:
+    return [validate_proposed_path(h.hypothesis_id, h.proposed_path, structural)
+            for h in hypotheses if h.proposed_path]
+
+
 class InvestigatorAgent:
     def __init__(self, provider: LLMProvider | None, *, disabled_reason: str | None = None,
                  repair_attempts: int = 1) -> None:
@@ -51,11 +67,27 @@ class InvestigatorAgent:
         self.repair_attempts = repair_attempts
 
     def investigate(
-        self, incident: Incident, events: Iterable[AuthEvent], *, is_admin: bool = False
+        self, incident: Incident, events: Iterable[AuthEvent], *, is_admin: bool = False,
+        structural: StructuralEvidence | None = None,
     ) -> InvestigationResult:
         start = time.perf_counter()
         evidence = {e.event_id: e for e in events if e.event_id in set(incident.event_ids)}
-        warnings = injection_warnings(incident, list(evidence.values()))
+        path_event_ids: set[str] = set()
+        assessment = None
+        context_events: list[AuthEvent] = []
+        warnings: list[str] = []
+        if structural is not None:
+            if structural.assessment.incident_sha256 == incident_sha256(incident):
+                assessment = structural.assessment
+                path_event_ids = {e for p in assessment.paths for e in p.event_ids}
+                context_events = [structural.events[e] for e in sorted(path_event_ids)
+                                  if e in structural.events]
+            else:
+                structural = None
+                warnings.append("Structural evidence belongs to a different version of this "
+                                "incident and was not used.")
+        warnings += injection_warnings(incident, [*evidence.values(), *context_events])
+        structural_sha = assessment_sha256(assessment) if assessment else None
         missing = len(set(incident.event_ids) - set(evidence))
         if missing:
             warnings.append(f"{missing} of {len(incident.event_ids)} evidence events could not "
@@ -65,15 +97,16 @@ class InvestigatorAgent:
         if self.provider is None:
             warnings.append(f"LLM not used: {self.disabled_reason or 'no provider configured'}; "
                             "deterministic fallback used.")
-            return self._fallback(incident, evidence, is_admin, sha, warnings, start)
+            return self._fallback(incident, evidence, is_admin, sha, warnings, start, assessment,
+                                  structural_sha)
 
-        user_prompt = build_user_prompt(incident, list(evidence.values()))
+        user_prompt = build_user_prompt(incident, list(evidence.values()), assessment)
         feedback: str | None = None
         last_errors: list[str] = []
         for attempt in range(1 + self.repair_attempts):
             try:
                 text = self.provider.complete_json(SYSTEM_PROMPT, user_prompt, feedback)
-                hypotheses, conclusion, extra = parse_and_ground(text, incident)
+                hypotheses, conclusion, extra = parse_and_ground(text, incident, path_event_ids)
                 conclusion = conclusion.model_copy(update={
                     "alternative_hypothesis_ids": [
                         h for h in conclusion.alternative_hypothesis_ids
@@ -88,6 +121,8 @@ class InvestigatorAgent:
                               + ([f"Accepted after {attempt} repair round(s)."]
                                  if attempt else [])],
                     created_at=datetime.now(UTC),
+                    structural_sha256=structural_sha,
+                    path_validations=_validate_proposals(hypotheses, structural),
                 )
                 logger.info("llm investigation accepted", extra={"context": {
                     "incident": incident.incident_id, "attempts": attempt + 1}})
@@ -107,16 +142,20 @@ class InvestigatorAgent:
                                 "deterministic fallback used.")
                 logger.warning("llm provider failed", extra={"context": {
                     "incident": incident.incident_id, "kind": exc.kind}})
-                return self._fallback(incident, evidence, is_admin, sha, warnings, start)
+                return self._fallback(incident, evidence, is_admin, sha, warnings, start,
+                                      assessment, structural_sha)
 
         warnings.append(f"LLM output failed validation after {1 + self.repair_attempts} "
                         f"attempt(s) ({'; '.join(last_errors[:2])}); deterministic fallback used.")
-        return self._fallback(incident, evidence, is_admin, sha, warnings, start)
+        return self._fallback(incident, evidence, is_admin, sha, warnings, start, assessment,
+                              structural_sha)
 
     @staticmethod
     def _fallback(incident: Incident, evidence: dict[str, AuthEvent], is_admin: bool,
-                  sha: str, warnings: list[str], start: float) -> InvestigationResult:
-        hypotheses, conclusion = fallback_investigation(incident, evidence, is_admin=is_admin)
+                  sha: str, warnings: list[str], start: float, assessment=None,
+                  structural_sha: str | None = None) -> InvestigationResult:
+        hypotheses, conclusion = fallback_investigation(
+            incident, evidence, is_admin=is_admin, structural=assessment)
         return InvestigationResult(
             incident_id=incident.incident_id, incident_sha256=sha,
             hypotheses=hypotheses, conclusion=conclusion,
@@ -124,4 +163,5 @@ class InvestigatorAgent:
             latency_ms=round((time.perf_counter() - start) * 1000, 1),
             warnings=[_short(w) for w in warnings],
             created_at=datetime.now(UTC),
+            structural_sha256=structural_sha,
         )

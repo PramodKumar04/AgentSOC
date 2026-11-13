@@ -10,12 +10,14 @@ import pytest
 
 from agentsoc.schemas import (
     AuthEvent,
+    Feasibility,
     Finding,
     Hypothesis,
     HypothesisKind,
     Incident,
     InvestigationResult,
     InvestigationSource,
+    PathValidation,
     Severity,
 )
 
@@ -132,6 +134,11 @@ def investigation_data(**overrides: Any) -> dict[str, Any]:
         "model": "openai/gpt-oss-120b",
         "latency_ms": 480.0,
         "created_at": T0,
+        "path_validations": [PathValidation(
+            hypothesis_id="H1", verdict=Feasibility.INFEASIBLE,
+            checked_path=["alice.fin@CORP", "WS-FIN-07", "SRV-APP-02", "DB-FIN-01"],
+            reasons=["Not validated in this fixture."],
+        )],
     }
     data.update(overrides)
     return data

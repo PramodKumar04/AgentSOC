@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Collection
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -76,9 +77,12 @@ def _errors(exc: ValidationError, prefix: str) -> list[str]:
 
 
 def parse_and_ground(
-    text: str, incident: Incident
+    text: str, incident: Incident, extra_event_ids: Collection[str] = ()
 ) -> tuple[list[Hypothesis], InvestigationConclusion, list[str]]:
-    """Return (hypotheses, conclusion, warnings) or raise InvestigationValidationError."""
+    """Return (hypotheses, conclusion, warnings) or raise InvestigationValidationError.
+
+    `extra_event_ids`: events on validated structural paths, also citable as evidence.
+    """
     try:
         draft = _Draft.model_validate(_load_json(text))
     except ValidationError as exc:
@@ -105,7 +109,7 @@ def parse_and_ground(
     if errors:
         raise InvestigationValidationError(errors)
 
-    known = set(incident.event_ids)
+    known = set(incident.event_ids) | set(extra_event_ids)
     for h in hypotheses:
         cited = set(h.supporting_event_ids) | set(h.contradicting_event_ids)
         unknown = sorted(cited - known)

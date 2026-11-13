@@ -14,6 +14,7 @@
     "(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)@.+"
   ],
   "admin_users": [],
+  "jump_hosts": [],
   "collapse_exact_duplicates": true,
   "correlation_gap_seconds": 3600,
   "failure_burst": {
@@ -53,6 +54,12 @@
     "hosts": [],
     "severity": "HIGH"
   },
+  "cross_account_pivot": {
+    "enabled": true,
+    "window_seconds": 1800,
+    "max_evidence_arrivals": 3,
+    "severity": "LOW"
+  },
   "severity_policy": {
     "points": {
       "FAILURE_BURST": 2,
@@ -61,11 +68,13 @@
       "NEW_DST_HOST": 1,
       "MULTI_HOST_SPREAD": 2,
       "LATERAL_CHAIN": 3,
-      "SENSITIVE_HOST_ACCESS": 3
+      "SENSITIVE_HOST_ACCESS": 3,
+      "CROSS_ACCOUNT_PIVOT": 1
     },
     "medium_at": 3,
     "high_at": 5,
     "critical_at": 8,
-    "downgrade_admin_users": true
+    "downgrade_admin_users": true,
+    "jump_host_point_reduction": 1
   }
 }

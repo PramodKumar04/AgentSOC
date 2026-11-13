@@ -7,6 +7,7 @@ investigation — never a confirmed compromise.
 
 from __future__ import annotations
 
+import hashlib
 from enum import StrEnum
 
 from pydantic import AwareDatetime, Field, model_validator
@@ -88,3 +89,8 @@ class Incident(Contract):
         if sorted(set(self.rule_ids)) != sorted({f.rule_id for f in self.findings}):
             raise ValueError("rule_ids must equal the distinct rule_ids of the findings")
         return self
+
+
+def incident_sha256(incident: Incident) -> str:
+    """Fingerprint of the exact incident content; binds derived results to it."""
+    return hashlib.sha256(incident.model_dump_json().encode("utf-8")).hexdigest()

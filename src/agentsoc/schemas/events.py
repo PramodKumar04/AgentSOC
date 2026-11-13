@@ -38,6 +38,8 @@ class DatasetSource(StrEnum):
     SYNTHETIC = "synthetic"
     LANL = "lanl"
     UPLOAD = "upload"
+    # Read from an organisation's own database through a configured connector.
+    ORGANIZATION = "organization"
 
 
 class RawRef(Contract):

@@ -1,0 +1,5 @@
+{
+  "admin_users": ["s07.admin@CORP", "s08.admin@CORP"],
+  "jump_hosts": ["S08-JUMP-.*", "S15-JUMP-.*"],
+  "sensitive_host_access": {"hosts": ["S07-DB", "S08-DB"]}
+}

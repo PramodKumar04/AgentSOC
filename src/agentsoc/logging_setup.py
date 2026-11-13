@@ -21,10 +21,28 @@ REDACTED = "[REDACTED]"
 _KEY_PATTERN = re.compile(r"\b(?:gsk_|xai-|sk-ant-|sk-)[A-Za-z0-9_\-]{16,}")
 
 
+# Secrets learned at runtime (e.g. a decrypted database password). Kept across
+# reconfiguration so a later `configure_logging` call cannot forget them.
+_RUNTIME_SECRETS: set[str] = set()
+_ACTIVE: list[Redactor] = []
+_MIN_SECRET_LENGTH = 4  # shorter values would redact ordinary words
+
+
+def register_secret(value: str) -> None:
+    """Redact `value` from all log output from now on."""
+    if value and len(value) >= _MIN_SECRET_LENGTH:
+        _RUNTIME_SECRETS.add(value)
+        for redactor in _ACTIVE:
+            redactor.add(value)
+
+
 class Redactor:
     def __init__(self, secrets: Iterable[str] = ()) -> None:
         # Longest first so a secret that contains another is fully replaced.
         self._secrets = sorted({s for s in secrets if s}, key=len, reverse=True)
+
+    def add(self, secret: str) -> None:
+        self._secrets = sorted({*self._secrets, secret}, key=len, reverse=True)
 
     def redact(self, value: Any) -> Any:
         if isinstance(value, str):
@@ -64,7 +82,9 @@ def configure_logging(level: str = "INFO", secrets: Iterable[str] = ()) -> None:
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
     handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter(Redactor(secrets)))
+    redactor = Redactor([*secrets, *_RUNTIME_SECRETS])
+    _ACTIVE[:] = [redactor]
+    handler.setFormatter(JsonFormatter(redactor))
     logger.addHandler(handler)
     logger.setLevel(level)
     logger.propagate = False

@@ -4,6 +4,167 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Organisation databases: mapping (C) and PostgreSQL connector (D) — awaiting review
+
+**The PostgreSQL connector is tested against a simulated database only. It is not yet
+verified against a real PostgreSQL server.**
+
+#### Added
+- Column mapping (`ingest/mapping.py`): rows become events or rejections with a reason.
+  Constants need explicit confirmation and are disclosed. Header CSV import
+  (`ingest/csv_import.py`) gives detections identical to the LANL parser on the demo.
+- Read-only PostgreSQL connector (`connectors/postgres.py`, psycopg 3.3.9).
+- Polling sync with checkpoints, idempotent storage, look-back for late rows, capture of the
+  original rows, and safe resume (`orgsource/`). Immutable snapshots analysed by the
+  unchanged engines and shown as `organization` data sources with UTC times.
+- Admin **Database Connections** page and `/api/admin/datasources*`. Analyst status at
+  `/api/datasources/organisation`. AI investigation is off per source until an administrator
+  allows it after a warning.
+- `AGENTSOC_SYNC_SCHEDULER` (default on). Application database schema 2 (`data_sources`).
+- `docs/organisation_databases.md`, `scripts/postgres_test_fixture.sql`.
+
+#### Not changed
+- Detection, SSE, RSEM and investigator logic; `RawRef`; existing datasets and outputs.
+
+### Phase A — Foundations (awaiting review)
+
+#### Added
+- Local accounts with administrator and analyst roles; scrypt password hashes; HttpOnly,
+  SameSite=Strict session cookies with idle and absolute expiry; CSRF tokens; account lockout
+  and a per-address failure limit. Sign-in, Account and (administrators) Users pages.
+- `scripts/manage_users.py` to create the first administrator; there is no default account.
+- Encrypted credential store (Fernet, key from `AGENTSOC_CREDENTIAL_KEY`, rotation) and
+  `scripts/manage_credentials.py`. Nothing uses it until Phase D.
+- Versioned application database (`store/appdb.py`) and a shared audit log with an event-type
+  catalogue, the signed-in user as actor, and a cross-process lock.
+- Per-source SQLite event index (`store/eventdb.py`, `scripts/build_event_index.py`) and
+  `scripts/benchmark_event_store.py`.
+- Optional absolute (UTC) time display per source.
+- `cryptography==50.0.2`.
+
+#### Changed
+- **Every API route except `/api/health` now requires sign-in.** The audit actor is the signed-in
+  user instead of the fixed `analyst-local`.
+- Security headers on all responses; `Cache-Control: no-store` on the API.
+
+#### Not changed
+- Detection, SSE, RSEM and investigator logic; `RawRef`; stored datasets, detections,
+  assessments and investigations; relative `Day N` labels for existing sources.
+
+## [0.9.0] — 2026-11-09 — Final dashboard integration
+
+### Added
+- Incident tabs: Attack graph, Risk & response, Provenance. Validated proposed paths in AI
+  investigation. Risk distribution on the overview; risk in the incident list and header.
+- `GET /api/incidents/{id}/graph`; additive risk, assessment-state and provenance fields;
+  `GET /api/activity?subject=&source=`.
+- `scripts/prepare_demo_sources.py` and a provenance-checked source registry.
+- `@xyflow/react` and `@dagrejs/dagre`, loaded only with the Attack graph tab. Dev: `axe-core`,
+  `puppeteer-core`, `npm run test:e2e`.
+
+### Changed
+- Darker text and status tokens, and focusable scrolling tables, after browser accessibility checks.
+
+### Not changed
+- Detection, structural and risk logic; stored outputs; severity as the default sort. Actions stay
+  proposed and dry-run; nothing can approve or execute them.
+
+## [0.8.0] — 2026-11-09 — Target 3: Risk Scoring and Evaluation Module
+
+### Added
+- `agentsoc.risk`: evidence attribution ledger, deterministic risk score (0-100), separate
+  investigation confidence, ranked and gated dry-run actions, independent verifier, hash-bound
+  persistence in `<detection dir>/risk/`.
+- `config/risk.json` with its own hash; `scripts/assess_risk.py`;
+  `GET /api/incidents/{id}/risk`; `scripts/evaluate_risk.py` with separate synthetic and LANL
+  reports in `docs/`.
+- `schemas.rsem`: `IncidentRiskRecord` and supporting types; reuses `IncidentRiskAssessment`,
+  `RiskComponent`, `ActionScore` and `ResponseAction`.
+- SYNTHETIC risk scenarios with hand-worked scores; 164 tests.
+
+### Changed
+- `generate_scenarios.py --set` accepts `risk`. The demo build also creates risk records.
+
+### Not changed
+- Detection engine, severity, structural engine, investigator, and all stored detection and
+  structural outputs (40 files byte-identical). The model's numeric confidence is in no score.
+
+## [0.7.0] — 2026-11-09 — Target 2: Structural Simulation Engine (NetworkX)
+
+### Added
+- `agentsoc.graph`: shared streaming event index, authentication graph and time-expanded event
+  graph, path/finding/disconnection/choke-host validation, an independent verifier against the
+  original events, post-LLM validation of proposed paths, hash-bound persistence.
+- `config/structural.json` with its own hash; `scripts/assess_structure.py`;
+  `GET /api/incidents/{id}/structure`; `scripts/evaluate_structure.py` with separate synthetic
+  and LANL reports in `docs/`.
+- `schemas.graph`: `GraphEdge`, `StructuralPath`, `FindingValidation`, `StructuralAssessment` and
+  related types. Validation is against observed authentication logs only.
+- `InvestigationResult.structural_sha256` and `path_validations`; a proposed path can no longer
+  exist without a deterministic validation.
+- Investigator prompt: structural evidence as untrusted data, `proposed_path`, and citation of
+  events on validated paths.
+- SYNTHETIC structural scenarios; 154 tests including a naive-graph acceptance comparison.
+
+### Changed
+- `generate_scenarios.py --set` accepts `structural`. The demo build also creates assessments.
+- `incident_sha256` moved to `schemas.incidents` (still importable from `investigator.agent`).
+
+### Not changed
+- Detection rules, incident severity and all stored detection outputs (36 files byte-identical).
+  RSEM is not implemented.
+
+## [0.6.0] — 2026-11-09 — Target 1: advanced lateral-movement detection
+
+### Added
+- `CROSS_ACCOUNT_PIVOT` rule (`detection/lateral.py`): one account arrives on a host, a different
+  account departs from it for the first time. Weight 1, severity LOW. It never claims credential
+  transfer or compromise.
+- Path metrics on `LATERAL_CHAIN` findings: `distinct_hosts`, `longest_hop_gap_seconds`,
+  `sensitive_hosts_on_path`, `ends_on_sensitive_host`.
+- `jump_hosts` config (regexes, empty by default): adds `benign_context`, never suppresses
+  findings. Severity is reduced only when every transit host is a jump host and no sensitive host
+  is on the path, recorded in `severity_adjustment` and the incident rationale.
+- `SeverityPolicy.jump_host_point_reduction`; `correlate.severity_for_findings`.
+- SYNTHETIC lateral scenarios (`data_gen/lateral_scenarios.py`,
+  `data/samples/auth_lateral_scenarios_synthetic.txt`), `generate_scenarios.py --set lateral`.
+- `scripts/evaluate_lateral.py`: separate synthetic and LANL reports in `docs/`.
+- 149 tests.
+
+### Changed
+- Engine version `auth-detect/1.1`. A pivot and `NEW_SRC_HOST` rest on the same departure event
+  and now count once in incident severity.
+- `SeverityPolicy` fills in default points for rules added after 1.0, so older config files load.
+
+### Not changed
+- `detection/rules.py`, all existing rule IDs, and the demo scenario and its config. Stored
+  outputs still verify, and the original seven rules reproduce them exactly.
+
+## [0.5.0] — 2026-10-31 — Web application (FastAPI + React) replaces the Streamlit UI
+
+### Added
+- `agentsoc.api`: FastAPI REST API (`app.py`), service layer (`service.py`), response models
+  (`models.py`): health, sources, overview, incidents (search/filter/sort/paginate), incident
+  detail and evidence, investigations (run/saved/history/by id), events, datasets and a
+  hash-chained activity log (`AuditRecord`). Automatic LLM → deterministic fallback with provider
+  diagnostics kept server-side; per-incident lock against duplicate investigations; safe error
+  responses; optional serving of the built frontend with SPA fallback.
+- `frontend/`: React 19 + TypeScript + Vite + Tailwind v4 (shadcn-style components on Radix,
+  Lucide, Recharts, React Router, React Query): Overview, Incidents, Incident detail (overview,
+  timeline, detection analysis, evidence, AI investigation), Investigations, Evidence Explorer,
+  Data Sources, System Activity. Collapsible sidebar, breadcrumbs, source context with
+  provenance, live operational status, loading/empty/error/offline states, accessible controls,
+  responsive layout.
+- Tests: 33 API tests (pytest) and 15 frontend tests (Vitest + Testing Library).
+- `investigator.store.investigation_id`.
+
+### Changed
+- LANL source keys are `lanl-<run>` (were `lanl:<run>`; `:` is not a valid audit identifier).
+- `requirements.txt`: `fastapi`, `uvicorn`; `requirements-dev.txt`: `httpx` (TestClient).
+
+### Deprecated
+- Streamlit dashboard (`app/streamlit_app.py`) — still runs and shows a deprecation notice.
+
 ## [0.4.0] — 2026-10-30 — Demo MVP: Investigator Agent (Phase 3 MVP) + SOC dashboard
 
 ### Added

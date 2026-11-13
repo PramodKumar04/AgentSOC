@@ -21,6 +21,9 @@ class RejectReason(StrEnum):
     INVALID_ORIENTATION = "INVALID_ORIENTATION"
     INVALID_OUTCOME = "INVALID_OUTCOME"
     INVALID_FIELD = "INVALID_FIELD"
+    # Mapped sources (CSV with a header, organisational databases).
+    UNSUPPORTED_VALUE = "UNSUPPORTED_VALUE"
+    DUPLICATE_RECORD_ID = "DUPLICATE_RECORD_ID"
 
 
 class RejectedRecord(Contract):

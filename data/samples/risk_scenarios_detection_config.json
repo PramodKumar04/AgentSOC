@@ -1,0 +1,5 @@
+{
+  "admin_users": ["r13.admin@CORP", "r14.admin@CORP"],
+  "jump_hosts": ["R15-JUMP-.*", "R16-JUMP-.*"],
+  "sensitive_host_access": {"hosts": ["R07-DB", "R08-DB", "R11-DB", "R12-DB", "R14-DB", "R16-DB"]}
+}

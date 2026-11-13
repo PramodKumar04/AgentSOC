@@ -1,0 +1,14 @@
+{
+  "weights": {
+    "credential_pressure": 0.15,
+    "access_novelty": 0.1,
+    "movement_depth": 0.35,
+    "sequence_breadth": 0.1,
+    "sensitive_exposure": 0.3
+  },
+  "bands": {
+    "medium_at": 20.0,
+    "high_at": 45.0,
+    "critical_at": 70.0
+  }
+}

@@ -13,19 +13,28 @@ large LANL datasets do not need to fit in memory.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from agentsoc.config import PROJECT_ROOT
 from agentsoc.detection.config import load_detection_config
 from agentsoc.detection.engine import run_detection
 from agentsoc.detection.inputs import load_verified_inputs
-from agentsoc.exceptions import DatasetIntegrityError
+from agentsoc.exceptions import AgentSOCError, DatasetIntegrityError
+from agentsoc.graph.assess import run_structural_assessment
+from agentsoc.graph.store import load_assessments
+from agentsoc.logging_setup import get_logger
 from agentsoc.perception.lanl import ingest_lanl_file
 from agentsoc.perception.quality import build_quality_report
+from agentsoc.risk.assess import run_risk_assessment
+from agentsoc.risk.store import load_risk_records
 from agentsoc.schemas import AuthEvent, DatasetSource, Finding, Incident
 from agentsoc.store.datasets import (
     EVENTS_FILE,
@@ -41,14 +50,21 @@ from agentsoc.store.detections import (
     write_detection_outputs,
 )
 
+logger = get_logger(__name__)
+
 DEMO_INPUT = PROJECT_ROOT / "data" / "samples" / "auth_scenarios_synthetic.txt"
 DEMO_CONFIG = PROJECT_ROOT / "data" / "samples" / "scenarios_detection_config.json"
 DEMO_LABEL = "SYNTHETIC 4-day enterprise scenario in LANL format (generated, not real activity)"
+REGISTRY_FILE = "demo_sources.json"  # written by scripts/prepare_demo_sources.py
 
 
 def data_root() -> Path:
     """`AGENTSOC_DATA_ROOT` overrides the default <project>/data/processed (used by tests)."""
     return Path(os.environ.get("AGENTSOC_DATA_ROOT", PROJECT_ROOT / "data" / "processed"))
+
+
+TimeDisplay = Literal["relative", "absolute"]
+TIME_DISPLAYS: tuple[TimeDisplay, ...] = ("relative", "absolute")
 
 
 @dataclass(frozen=True)
@@ -58,6 +74,9 @@ class Source:
     provenance: DatasetSource
     dataset_dir: Path
     detection_dir: Path
+    # "relative": anonymised offsets (LANL, synthetic) shown as "Day N HH:MM:SS".
+    # "absolute": real clock times, shown in UTC with the zone stated.
+    time_display: TimeDisplay = "relative"
 
 
 def ensure_demo(root: Path | None = None) -> Source:
@@ -75,13 +94,88 @@ def ensure_demo(root: Path | None = None) -> Source:
         inputs = load_verified_inputs([dataset_dir])
         detection = run_detection([e for i in inputs for e in i.events], config)
         write_detection_outputs(detection, inputs, config, detection_dir, overwrite=True)
+    try:
+        load_assessments(detection_dir)
+    except DatasetIntegrityError:
+        run_structural_assessment([dataset_dir], detection_dir, overwrite=True)
+    try:
+        load_risk_records(detection_dir)
+    except DatasetIntegrityError:
+        with contextlib.suppress(DatasetIntegrityError):  # no structural assessment to score
+            run_risk_assessment(detection_dir, overwrite=True)
     return Source("demo", "Synthetic demo scenario (4 days)", DatasetSource.SYNTHETIC,
                   dataset_dir, detection_dir)
 
 
+def _registered_sources(root: Path) -> list[Source]:
+    """Prepared sources, each confirmed to be what its label says before it is offered."""
+    path = root / REGISTRY_FILE
+    if not path.is_file():
+        return []
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))["sources"]
+    except (ValueError, KeyError, TypeError):
+        logger.warning("source registry is invalid")
+        return []
+    out: list[Source] = []
+    for entry in entries:
+        try:
+            dataset_dir, detection_dir = (root / entry["dataset_dir"]).resolve(), (
+                root / entry["detection_dir"]).resolve()
+            base = root.resolve()
+            if base not in dataset_dir.parents or base not in detection_dir.parents:
+                raise DatasetIntegrityError("registered path is outside the data root")
+            provenance = DatasetSource(entry["provenance"])
+            time_display = entry.get("time_display", "relative")
+            if time_display not in TIME_DISPLAYS:
+                raise DatasetIntegrityError("unknown time display")
+            if load_manifest(dataset_dir).dataset is not provenance:
+                raise DatasetIntegrityError("provenance does not match the dataset manifest")
+            load_detection_summary(detection_dir)
+            out.append(Source(entry["key"], entry["label"], provenance, dataset_dir,
+                              detection_dir, time_display))
+        except (AgentSOCError, KeyError, TypeError, ValueError, OSError) as exc:
+            logger.warning("registered source skipped", extra={"context": {
+                "reason": type(exc).__name__}})
+    return out
+
+
+def _organisation_sources(root: Path) -> list[Source]:
+    """The current snapshot of each organisational source (see agentsoc.orgsource)."""
+    base = root / "org"
+    if not base.is_dir():
+        return []
+    out: list[Source] = []
+    for directory in sorted(p for p in base.iterdir() if p.is_dir()):
+        try:
+            record = json.loads((directory / "current.json").read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            logger.warning("organisation source skipped", extra={"context": {
+                "reason": "unreadable current.json"}})
+            continue
+        try:
+            snapshot = (directory / "snapshots" / record["snapshot"]).resolve()
+            if directory.resolve() not in snapshot.parents:
+                raise DatasetIntegrityError("snapshot path leaves the source directory")
+            dataset_dir, detection_dir = snapshot / "dataset", snapshot / "detection"
+            if load_manifest(dataset_dir).dataset is not DatasetSource.ORGANIZATION:
+                raise DatasetIntegrityError("snapshot is not organisational data")
+            load_detection_summary(detection_dir)
+            if record["key"] != f"org-{directory.name}":
+                raise DatasetIntegrityError("snapshot key does not match its directory")
+            out.append(Source(record["key"], str(record["label"]), DatasetSource.ORGANIZATION,
+                              dataset_dir, detection_dir, "absolute"))
+        except (AgentSOCError, KeyError, TypeError, ValueError, OSError) as exc:
+            logger.warning("organisation source skipped", extra={"context": {
+                "reason": type(exc).__name__}})
+    return out
+
+
 def discover_sources(root: Path | None = None) -> list[Source]:
     root = root or data_root()
-    sources = [ensure_demo(root)]
+    sources = [ensure_demo(root), *_registered_sources(root), *_organisation_sources(root)]
     summary_path = root / "lanl_validation" / "detection_summary.json"
     if summary_path.is_file():
         runs = json.loads(summary_path.read_text(encoding="utf-8")).get("runs", {})
@@ -91,7 +185,7 @@ def discover_sources(root: Path | None = None) -> list[Source]:
             if (dataset_dir / EVENTS_FILE).is_file() and (detection_dir / SUMMARY_FILE).is_file():
                 mode = run["spec"]["baseline_mode"]
                 suffix = " — sensitivity run (short baseline)" if mode == "half_window" else ""
-                sources.append(Source(f"lanl:{name}", f"LANL 2015 (real, sampled): {name}{suffix}",
+                sources.append(Source(f"lanl-{name}", f"LANL 2015 (real, sampled): {name}{suffix}",
                                       DatasetSource.LANL, dataset_dir, detection_dir))
     return sources
 
@@ -138,6 +232,23 @@ def load_evidence(dataset_dir: Path, event_ids: set[str]) -> dict[str, AuthEvent
     if digest.hexdigest() != manifest.events_sha256:
         raise DatasetIntegrityError("events file hash does not match its manifest")
     return found
+
+
+def format_time(ts: datetime, mode: TimeDisplay = "relative") -> str:
+    if mode == "absolute":
+        return ts.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return relative_time(ts)
+
+
+def format_hour(ts: datetime, mode: TimeDisplay = "relative") -> str:
+    """Label for the hour containing `ts` (used to group incidents by hour)."""
+    if mode == "absolute":
+        return ts.astimezone(UTC).strftime("%Y-%m-%d %H:00 UTC")
+    return relative_time(ts)[:-6] + ":00"
+
+
+def time_formatter(source: Source) -> Callable[[datetime], str]:
+    return lambda ts: format_time(ts, source.time_display)
 
 
 def relative_time(ts) -> str:

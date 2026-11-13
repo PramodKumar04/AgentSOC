@@ -161,7 +161,8 @@ def render_report(
         )
     lines += [
         "",
-        "Novelty rules (`NEW_*`, `MULTI_HOST_SPREAD`, `LATERAL_CHAIN`, `SENSITIVE_HOST_ACCESS`) "
+        "Novelty rules (`NEW_*`, `MULTI_HOST_SPREAD`, `LATERAL_CHAIN`, `CROSS_ACCOUNT_PIVOT`, "
+        "`SENSITIVE_HOST_ACCESS`) "
         "only evaluate events after the baseline, for users with baseline activity.",
         "",
         "## Findings by rule",

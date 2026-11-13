@@ -20,6 +20,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
 from agentsoc.schemas.common import Contract, Identifier, LongText, ShortText, UnitInterval
+from agentsoc.schemas.graph import PathValidation
 
 AttackTechniqueId = Annotated[str, StringConstraints(pattern=r"^T\d{4}(\.\d{3})?$")]
 # Model names such as "openai/gpt-oss-120b" contain "/", which Identifier forbids.
@@ -96,6 +97,9 @@ class InvestigationResult(Contract):
     latency_ms: float = Field(ge=0)
     warnings: list[ShortText] = Field(default_factory=list)
     created_at: AwareDatetime
+    # SHA-256 of the structural assessment given to the investigator, when there was one.
+    structural_sha256: Sha256Hex | None = None
+    path_validations: list[PathValidation] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_result(self) -> InvestigationResult:
@@ -107,6 +111,9 @@ class InvestigationResult(Contract):
             raise ValueError("at least one BENIGN hypothesis is required")
         if self.source is InvestigationSource.LLM and not (self.provider and self.model):
             raise ValueError("LLM results must record provider and model")
+        proposed = {h.hypothesis_id: h.proposed_path for h in self.hypotheses if h.proposed_path}
+        if proposed != {v.hypothesis_id: v.checked_path for v in self.path_validations}:
+            raise ValueError("every proposed path needs exactly one deterministic validation")
         c = self.conclusion
         known = set(ids)
         if c.most_plausible_hypothesis_id not in known:

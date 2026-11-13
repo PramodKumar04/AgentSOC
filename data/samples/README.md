@@ -44,6 +44,33 @@ scenario; they are **not** a measure of detection accuracy.
 `scenarios_detection_config.json` = defaults + `admin_users: ["dave.it@CORP"]` +
 `sensitive_host_access.hosts: ["DB-FIN-01"]`.
 
+## `auth_lateral_scenarios_synthetic.txt` — SYNTHETIC (generated)
+
+Produced deterministically by `python scripts/generate_scenarios.py --set lateral` (source:
+`src/agentsoc/data_gen/lateral_scenarios.py`); a test fails if the committed file and the
+generator drift. 15 independent lateral-movement scenarios, each with its own accounts and hosts
+and a hand-written expected outcome. Use with `lateral_scenarios_detection_config.json`.
+Results: [docs/target1_synthetic_results.md](../../docs/target1_synthetic_results.md). These verify
+rule logic on constructed inputs; they are **not** a measure of detection accuracy.
+
+## `auth_structural_scenarios_synthetic.txt` — SYNTHETIC (generated)
+
+Produced deterministically by `python scripts/generate_scenarios.py --set structural` (source:
+`src/agentsoc/data_gen/structural_scenarios.py`); a test fails if the committed file and the
+generator drift. 17 independent scenarios, each with a hand-written expected structural outcome.
+Results: [docs/target2_synthetic_results.md](../../docs/target2_synthetic_results.md). These verify
+behaviour on constructed inputs; they are **not** a measure of detection accuracy.
+
+## `auth_risk_scenarios_synthetic.txt` — SYNTHETIC (generated)
+
+Produced deterministically by `python scripts/generate_scenarios.py --set risk` (source:
+`src/agentsoc/data_gen/risk_scenarios.py`); a test fails if the committed file and the generator
+drift. 19 independent scenarios, each with a hand-worked expected score. Use with
+`risk_scenarios_detection_config.json`. Results:
+[docs/target3_synthetic_results.md](../../docs/target3_synthetic_results.md). These verify
+arithmetic and safeguards on constructed inputs; they are **not** calibration or a measure of
+accuracy.
+
 ## Real LANL data
 
 Download `auth.txt.gz` from <https://csr.lanl.gov/data/cyber1/> (subject to the site's terms) into

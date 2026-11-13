@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Design tokens — one place for colour, type, radius and shadow. */
+@theme {
+  --font-sans: "Inter", "Inter var", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  --color-canvas: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-subtle: #f8fafc;
+  --color-border: #e3e6eb;
+  --color-border-strong: #cfd5dd;
+  --color-ink: #0f172a;
+  --color-ink-2: #334155;
+  --color-muted: #556377;
+  --color-faint: #5b6879;
+
+  --color-brand: #2563eb;
+  --color-brand-strong: #1d4ed8;
+  --color-brand-soft: #eff4ff;
+
+  --color-sidebar: #0b1324;
+  --color-sidebar-2: #111c33;
+  --color-sidebar-line: #1d2a44;
+  --color-sidebar-text: #c8d2e2;
+  --color-sidebar-muted: #7d8aa3;
+
+  --color-critical: #b91c1c;
+  --color-critical-soft: #fef2f2;
+  --color-high: #c2410c;
+  --color-high-soft: #fff7ed;
+  --color-medium: #b45309;
+  --color-medium-soft: #fffbeb;
+  --color-low: #475569;
+  --color-low-soft: #f1f5f9;
+
+  --color-ok: #15803d;
+  --color-ok-soft: #f0fdf4;
+  --color-warn: #b45309;
+  --color-warn-soft: #fffbeb;
+  --color-danger: #b91c1c;
+
+  --color-synthetic: #7c3aed;
+  --color-synthetic-soft: #f5f3ff;
+  --color-real: #0369a1;
+  --color-real-soft: #f0f9ff;
+
+  --radius-card: 0.625rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.04);
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  :focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  ::selection { background: #dbeafe; }
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* React Flow's attribution link, at readable contrast. */
+.react-flow .react-flow__attribution a { color: var(--color-ink-2); }

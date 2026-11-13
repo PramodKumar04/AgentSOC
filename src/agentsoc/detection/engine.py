@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from agentsoc.detection import rules
+from agentsoc.detection import lateral, rules
 from agentsoc.detection.baseline import annotate_novelty, build_profiles, split_baseline
 from agentsoc.detection.config import DetectionConfig
 from agentsoc.detection.correlate import correlate
@@ -16,7 +16,7 @@ from agentsoc.logging_setup import get_logger
 from agentsoc.schemas import AuthEvent, DatasetSource, Finding, Incident
 from agentsoc.schemas.common import Contract
 
-ENGINE_VERSION = "auth-detect/1.0"
+ENGINE_VERSION = "auth-detect/1.1"
 logger = get_logger(__name__)
 
 
@@ -81,7 +81,11 @@ def _detect_partition(
     if config.multi_host_spread.enabled:
         found += rules.multi_host_spread(novelty, config)
     if config.lateral_chain.enabled:
-        found += rules.lateral_chains(split.evaluated_events, novelty, profiles, config)
+        found += lateral.enrich_chains(
+            rules.lateral_chains(split.evaluated_events, novelty, profiles, config), config
+        )
+    if config.cross_account_pivot.enabled:
+        found += lateral.cross_account_pivots(split.evaluated_events, novelty, config)
     if config.sensitive_host_access.enabled:
         found += rules.sensitive_access(novelty, config)
 

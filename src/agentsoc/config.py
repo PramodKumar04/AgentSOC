@@ -41,6 +41,23 @@ class Settings(BaseSettings):
     llm_max_tokens: int = Field(default=2000, ge=1, le=8000)
 
     db_path: Path = Field(default=Path("data/agentsoc.db"), validation_alias="AGENTSOC_DB_PATH")
+
+    # Sign-in sessions. Secure cookies need HTTPS; enable for any non-local deployment.
+    session_idle_minutes: int = Field(
+        default=30, ge=5, le=480, validation_alias="AGENTSOC_SESSION_IDLE_MINUTES")
+    session_max_hours: int = Field(
+        default=8, ge=1, le=24, validation_alias="AGENTSOC_SESSION_MAX_HOURS")
+    cookie_secure: bool = Field(default=False, validation_alias="AGENTSOC_COOKIE_SECURE")
+    login_max_failures: int = Field(
+        default=5, ge=3, le=20, validation_alias="AGENTSOC_LOGIN_MAX_FAILURES")
+    login_lockout_minutes: int = Field(
+        default=15, ge=1, le=1440, validation_alias="AGENTSOC_LOGIN_LOCKOUT_MINUTES")
+
+    # Fernet key(s) for stored credentials, comma-separated; the first one encrypts.
+    credential_key: SecretStr | None = Field(
+        default=None, validation_alias="AGENTSOC_CREDENTIAL_KEY")
+    # Poll enabled organisational data sources in the background (uvicorn app only).
+    sync_scheduler: bool = Field(default=True, validation_alias="AGENTSOC_SYNC_SCHEDULER")
     log_level: LogLevel = "INFO"
 
     @field_validator("llm_provider", "log_level", mode="before")
@@ -51,7 +68,7 @@ class Settings(BaseSettings):
         value = value.strip()
         return value.upper() if value.upper() in LogLevel.__args__ else value.lower()
 
-    @field_validator("groq_api_key", "groq_model", mode="before")
+    @field_validator("groq_api_key", "groq_model", "credential_key", mode="before")
     @classmethod
     def _blank_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
@@ -87,7 +104,11 @@ class Settings(BaseSettings):
 
     def secret_values(self) -> list[str]:
         """Raw secret strings, for log redaction only."""
-        return [self.groq_api_key.get_secret_value()] if self.groq_api_key else []
+        values = [self.groq_api_key.get_secret_value()] if self.groq_api_key else []
+        if self.credential_key:
+            values += [k.strip() for k in self.credential_key.get_secret_value().split(",")
+                       if k.strip()]
+        return values
 
 
 def load_settings(**overrides: object) -> Settings:

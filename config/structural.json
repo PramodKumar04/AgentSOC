@@ -1,0 +1,10 @@
+{
+  "max_link_gap_seconds": 1800,
+  "max_expansion_hops": 3,
+  "max_links_per_event": 8,
+  "max_context_events": 2000,
+  "max_paths": 20,
+  "max_anchors_compared": 200,
+  "max_choke_targets": 10,
+  "ambiguous_link_accounts": 3
+}

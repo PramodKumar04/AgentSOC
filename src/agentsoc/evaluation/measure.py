@@ -4,6 +4,8 @@ peak belongs to exactly one stage.
 
     python -m agentsoc.evaluation.measure ingest <ingest CLI args>
     python -m agentsoc.evaluation.measure detect <detect CLI args>
+    python -m agentsoc.evaluation.measure structure <assess-structure CLI args>
+    python -m agentsoc.evaluation.measure risk <assess-risk CLI args>
 
 The last stdout line is `AGENTSOC_METRICS {json}`.
 """
@@ -56,10 +58,11 @@ def peak_memory_bytes() -> int | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from agentsoc.cli import detect_main, ingest_main
+    from agentsoc.cli import assess_risk_main, assess_structure_main, detect_main, ingest_main
 
     args = list(sys.argv[1:] if argv is None else argv)
-    stages = {"ingest": ingest_main, "detect": detect_main}
+    stages = {"ingest": ingest_main, "detect": detect_main, "structure": assess_structure_main,
+              "risk": assess_risk_main}
     if not args or args[0] not in stages:
         print(f"usage: measure {{{'|'.join(stages)}}} <stage args>")
         return 2

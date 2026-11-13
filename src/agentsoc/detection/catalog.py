@@ -20,6 +20,7 @@ class RuleId(StrEnum):
     MULTI_HOST_SPREAD = "MULTI_HOST_SPREAD"
     LATERAL_CHAIN = "LATERAL_CHAIN"
     SENSITIVE_HOST_ACCESS = "SENSITIVE_HOST_ACCESS"
+    CROSS_ACCOUNT_PIVOT = "CROSS_ACCOUNT_PIVOT"
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,28 @@ CATALOG: dict[RuleId, RuleInfo] = {
             "Network flow data confirming the connections.",
         ),
     ),
+    RuleId.CROSS_ACCOUNT_PIVOT: RuleInfo(
+        title="Different accounts arriving on and departing from one host",
+        benign_explanations=(
+            "Shared servers, terminal servers and build hosts serve many accounts at once.",
+            "An administrator or service account works on a host another user just reached.",
+            "One person using a separate administrative account.",
+        ),
+        limitations=(
+            "Shows two accounts using one host close in time; it does not show that "
+            "credentials were transferred or that either account was compromised.",
+            "Busy shared hosts make this co-occurrence likely by chance; see "
+            "other_accounts_on_host.",
+            "Only a first-seen source counts, so a pivot through a host the account already "
+            "used in the baseline is missed.",
+            _BASELINE_LIMIT,
+        ),
+        missing_information=(
+            "Session data showing who operated each account on the host.",
+            "Process and command-line telemetry on the host.",
+            "Ownership of the accounts involved.",
+        ),
+    ),
     RuleId.SENSITIVE_HOST_ACCESS: RuleInfo(
         title="First-seen access to a configured sensitive host",
         benign_explanations=("Authorised first-time access, e.g. new role or audit task.",),
@@ -148,10 +171,15 @@ DATASET_LIMITATIONS: dict[DatasetSource, tuple[str, ...]] = {
         "LANL identities are anonymised; user roles and asset criticality are unknown.",
     ),
     DatasetSource.UPLOAD: ("Provenance of uploaded data is asserted by the uploader.",),
+    DatasetSource.ORGANIZATION: (
+        "Evidence comes from an organisational database through a configured column mapping; "
+        "fields the source lacks may be set to administrator-confirmed constants.",
+    ),
 }
 
 DATASET_FLAGS: dict[DatasetSource, str] = {
     DatasetSource.SYNTHETIC: "synthetic-data",
     DatasetSource.LANL: "lanl-data",
     DatasetSource.UPLOAD: "uploaded-data",
+    DatasetSource.ORGANIZATION: "organization-data",
 }

@@ -55,6 +55,13 @@ class LateralChainConfig(Contract):
     severity: Severity = Severity.HIGH
 
 
+class CrossAccountPivotConfig(Contract):
+    enabled: bool = True
+    window_seconds: int = Field(default=1800, ge=1)
+    max_evidence_arrivals: int = Field(default=3, ge=1)
+    severity: Severity = Severity.LOW
+
+
 class SensitiveAccessConfig(Contract):
     enabled: bool = True
     hosts: list[Identifier] = Field(default_factory=list)
@@ -69,7 +76,10 @@ DEFAULT_POINTS: dict[RuleId, int] = {
     RuleId.MULTI_HOST_SPREAD: 2,
     RuleId.LATERAL_CHAIN: 3,
     RuleId.SENSITIVE_HOST_ACCESS: 3,
+    RuleId.CROSS_ACCOUNT_PIVOT: 1,
 }
+# Config files written before these rules existed stay valid and get the default points.
+RULES_ADDED_AFTER_1_0 = (RuleId.CROSS_ACCOUNT_PIVOT,)
 
 
 class SeverityPolicy(Contract):
@@ -80,6 +90,14 @@ class SeverityPolicy(Contract):
     high_at: int = Field(default=5, ge=1)
     critical_at: int = Field(default=8, ge=1)
     downgrade_admin_users: bool = True
+    jump_host_point_reduction: int = Field(default=1, ge=0)
+
+    @field_validator("points", mode="before")
+    @classmethod
+    def _fill_later_rules(cls, points: object) -> object:
+        if not isinstance(points, dict):
+            return points
+        return {**{r.value: DEFAULT_POINTS[r] for r in RULES_ADDED_AFTER_1_0}, **points}
 
     @model_validator(mode="after")
     def _check(self) -> SeverityPolicy:
@@ -105,6 +123,7 @@ class DetectionConfig(Contract):
         default_factory=lambda: list(DEFAULT_EXCLUDED_USER_PATTERNS)
     )
     admin_users: list[Identifier] = Field(default_factory=list)
+    jump_hosts: list[str] = Field(default_factory=list)  # regexes, full match on the host name
     collapse_exact_duplicates: bool = True
     correlation_gap_seconds: int = Field(default=3600, ge=0)
 
@@ -115,9 +134,10 @@ class DetectionConfig(Contract):
     multi_host_spread: MultiHostConfig = Field(default_factory=MultiHostConfig)
     lateral_chain: LateralChainConfig = Field(default_factory=LateralChainConfig)
     sensitive_host_access: SensitiveAccessConfig = Field(default_factory=SensitiveAccessConfig)
+    cross_account_pivot: CrossAccountPivotConfig = Field(default_factory=CrossAccountPivotConfig)
     severity_policy: SeverityPolicy = Field(default_factory=SeverityPolicy)
 
-    @field_validator("excluded_user_patterns")
+    @field_validator("excluded_user_patterns", "jump_hosts")
     @classmethod
     def _compile(cls, patterns: list[str]) -> list[str]:
         for pattern in patterns:
@@ -129,6 +149,9 @@ class DetectionConfig(Contract):
 
     def is_excluded(self, user: str) -> bool:
         return any(re.fullmatch(p, user) for p in self.excluded_user_patterns)
+
+    def is_jump_host(self, host: str) -> bool:
+        return any(re.fullmatch(p, host) for p in self.jump_hosts)
 
     def sha256(self) -> str:
         return hashlib.sha256(self.model_dump_json().encode("utf-8")).hexdigest()

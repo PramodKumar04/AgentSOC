@@ -20,11 +20,13 @@ from __future__ import annotations
 
 from agentsoc.detection.catalog import RuleId
 from agentsoc.schemas import AuthEvent, Hypothesis, HypothesisKind, Incident, Severity
+from agentsoc.schemas.graph import PathKind, StructuralAssessment
 from agentsoc.schemas.investigation import EvidenceNote, InvestigationConclusion
 
 FAILURE_RULES = {RuleId.FAILURE_BURST, RuleId.FAIL_THEN_SUCCESS}
 NOVELTY_RULES = {RuleId.NEW_SRC_HOST, RuleId.NEW_DST_HOST, RuleId.MULTI_HOST_SPREAD,
-                 RuleId.LATERAL_CHAIN, RuleId.SENSITIVE_HOST_ACCESS}
+                 RuleId.LATERAL_CHAIN, RuleId.SENSITIVE_HOST_ACCESS,
+                 RuleId.CROSS_ACCOUNT_PIVOT}
 ATTACK_BY_RULE: dict[RuleId, tuple[str, ...]] = {
     RuleId.FAILURE_BURST: ("T1110",),  # Brute Force
     RuleId.FAIL_THEN_SUCCESS: ("T1110", "T1078"),  # Brute Force -> Valid Accounts
@@ -33,6 +35,7 @@ ATTACK_BY_RULE: dict[RuleId, tuple[str, ...]] = {
     RuleId.MULTI_HOST_SPREAD: ("T1021",),  # Remote Services
     RuleId.LATERAL_CHAIN: ("T1021",),
     RuleId.SENSITIVE_HOST_ACCESS: ("T1078",),
+    RuleId.CROSS_ACCOUNT_PIVOT: ("T1078",),
 }
 BASE_CONFIDENCE = {Severity.LOW: 0.25, Severity.MEDIUM: 0.40, Severity.HIGH: 0.55,
                    Severity.CRITICAL: 0.70}
@@ -81,13 +84,30 @@ def _next_steps(incident: Incident, rules: set[RuleId]) -> list[str]:
     if RuleId.LATERAL_CHAIN in rules:
         steps.append("Collect process and network telemetry from the intermediate hosts of the "
                      "authentication chain.")
+    if RuleId.CROSS_ACCOUNT_PIVOT in rules:
+        steps.append("Establish whether the accounts involved legitimately share this host "
+                     "(shared server, service or administrative role) before treating the "
+                     "sequence as a pivot.")
     if RuleId.SENSITIVE_HOST_ACCESS in rules:
         steps.append("Review data-access logs on the sensitive host for the incident window.")
     return [s[:300] for s in steps[:10]]
 
 
+def _structural_note(assessment: StructuralAssessment | None) -> str:
+    """Text only: the structural result never changes a fallback confidence value."""
+    if assessment is None or not assessment.paths:
+        return ""
+    observed = sum(p.kind is PathKind.OBSERVED for p in assessment.paths)
+    longest = max(len(p.event_ids) for p in assessment.paths)
+    return (f" Structural validation of observed logons: {observed} observed and "
+            f"{len(assessment.paths) - observed} inferred path(s), longest {longest} hop(s); "
+            f"{len(assessment.disconnected)} suspicious event(s) do not connect. A connected "
+            "path is not evidence of compromise.")
+
+
 def fallback_investigation(
-    incident: Incident, events: dict[str, AuthEvent], *, is_admin: bool
+    incident: Incident, events: dict[str, AuthEvent], *, is_admin: bool,
+    structural: StructuralAssessment | None = None,
 ) -> tuple[list[Hypothesis], InvestigationConclusion]:
     rules = {RuleId(r) for r in incident.rule_ids}
     failure_ids = _events_for(incident, rules & FAILURE_RULES)
@@ -114,6 +134,7 @@ def fallback_investigation(
             + (", +0.10 for chain/sensitive access" if rules & {RuleId.LATERAL_CHAIN,
                RuleId.SENSITIVE_HOST_ACCESS} else "")
             + (", -0.25 for configured admin account" if is_admin else "") + "."
+            + _structural_note(structural)
         )[:2000],
         attack_techniques=techniques,
         supporting_event_ids=all_ids,

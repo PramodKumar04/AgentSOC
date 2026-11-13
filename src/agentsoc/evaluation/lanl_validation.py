@@ -21,14 +21,14 @@ from typing import Any
 
 from agentsoc.detection.catalog import CATALOG, RuleId
 from agentsoc.detection.config import DetectionConfig
-from agentsoc.detection.correlate import incident_severity
+from agentsoc.detection.correlate import severity_for_findings
 from agentsoc.schemas import Finding, Incident
 from agentsoc.store.datasets import EVENTS_FILE, DatasetManifest
 
 COMPUTER_PATTERN = re.compile(r"C\d+")  # LANL's anonymised computer names
 NOVELTY_RULES = {
     RuleId.NEW_SRC_HOST, RuleId.NEW_DST_HOST, RuleId.MULTI_HOST_SPREAD,
-    RuleId.LATERAL_CHAIN, RuleId.SENSITIVE_HOST_ACCESS,
+    RuleId.LATERAL_CHAIN, RuleId.SENSITIVE_HOST_ACCESS, RuleId.CROSS_ACCOUNT_PIVOT,
 }
 DISCLAIMER = (
     "This is an evaluation on SAMPLED windows of the LANL 2015 authentication dataset. "
@@ -217,7 +217,8 @@ def _zero_reason(rule: RuleId, baseline: dict, config: DetectionConfig, novelty_
     if rule is RuleId.SENSITIVE_HOST_ACCESS and not config.sensitive_host_access.hosts:
         return ("Inert: no sensitive hosts are configured (LANL hosts are anonymised and carry "
                 "no criticality data).")
-    if rule in (RuleId.MULTI_HOST_SPREAD, RuleId.LATERAL_CHAIN) and not novelty_fired:
+    if (rule in (RuleId.MULTI_HOST_SPREAD, RuleId.LATERAL_CHAIN, RuleId.CROSS_ACCOUNT_PIVOT)
+            and not novelty_fired):
         return "No first-seen access occurred after the baseline, so this rule had no input."
     return ("Evaluated; no activity met the configured thresholds in this sample. Zero findings "
             "is not evidence that the rule works or fails.")
@@ -300,8 +301,8 @@ def integrity_section(
                 failures.append(f"{label}: {f.finding_id} joined without time proximity or "
                                 "shared evidence")
             latest, evidence = max(latest, f.last_seen), evidence | set(f.event_ids)
-        severity, rationale = incident_severity(
-            [RuleId(r) for r in i.rule_ids],
+        severity, rationale = severity_for_findings(
+            i.findings,
             is_admin=i.principal_user in config.admin_users,
             policy=config.severity_policy,
         )

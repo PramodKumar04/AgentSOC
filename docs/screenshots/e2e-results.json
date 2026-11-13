@@ -1,0 +1,170 @@
+[
+  {
+    "view": "overview",
+    "viewport": "1440",
+    "readyMs": 549,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "incidents",
+    "viewport": "1440",
+    "readyMs": 152,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "incident-header",
+    "viewport": "1440",
+    "readyMs": 176,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-observed",
+    "viewport": "1440",
+    "readyMs": 497,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-inferred",
+    "viewport": "1440",
+    "readyMs": 480,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-lanl-truncated",
+    "viewport": "1440",
+    "readyMs": 5786,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-lanl-largest",
+    "viewport": "1440",
+    "readyMs": 510,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "risk-response",
+    "viewport": "1440",
+    "readyMs": 159,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "investigation",
+    "viewport": "1440",
+    "readyMs": 175,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "provenance",
+    "viewport": "1440",
+    "readyMs": 144,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "not-assessed",
+    "viewport": "1440",
+    "readyMs": 4821,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "data-sources",
+    "viewport": "1440",
+    "readyMs": 149,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "overview",
+    "viewport": "390",
+    "readyMs": 388,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "incidents",
+    "viewport": "390",
+    "readyMs": 189,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "incident-header",
+    "viewport": "390",
+    "readyMs": 196,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-observed",
+    "viewport": "390",
+    "readyMs": 523,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-inferred",
+    "viewport": "390",
+    "readyMs": 499,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-lanl-truncated",
+    "viewport": "390",
+    "readyMs": 510,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "graph-lanl-largest",
+    "viewport": "390",
+    "readyMs": 514,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "risk-response",
+    "viewport": "390",
+    "readyMs": 204,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "investigation",
+    "viewport": "390",
+    "readyMs": 183,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "provenance",
+    "viewport": "390",
+    "readyMs": 164,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "not-assessed",
+    "viewport": "390",
+    "readyMs": 152,
+    "overflow": 0,
+    "violations": []
+  },
+  {
+    "view": "data-sources",
+    "viewport": "390",
+    "readyMs": 169,
+    "overflow": 0,
+    "violations": []
+  }
+]

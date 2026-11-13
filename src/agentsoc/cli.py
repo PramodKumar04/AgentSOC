@@ -7,11 +7,16 @@ from datetime import datetime
 from pathlib import Path
 
 from agentsoc.config import get_settings
+from agentsoc.data_gen.lateral_scenarios import generate_lateral_scenario_text
+from agentsoc.data_gen.risk_scenarios import generate_risk_scenario_text
 from agentsoc.data_gen.scenarios import generate_scenario_text
+from agentsoc.data_gen.structural_scenarios import generate_structural_scenario_text
 from agentsoc.detection.config import load_detection_config
 from agentsoc.detection.engine import run_detection
 from agentsoc.detection.inputs import load_verified_inputs
 from agentsoc.exceptions import AgentSOCError
+from agentsoc.graph.assess import run_structural_assessment
+from agentsoc.graph.config import load_structural_config
 from agentsoc.logging_setup import configure_logging
 from agentsoc.perception.lanl import DEFAULT_BASE_TIME, ingest_lanl_file
 from agentsoc.perception.quality import build_quality_report
@@ -110,14 +115,79 @@ def detect_main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def assess_structure_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Validate detected incidents against observed authentication graphs."
+    )
+    parser.add_argument("datasets", nargs="+", type=Path, help="processed dataset directories")
+    parser.add_argument("--detection", type=Path, required=True, help="detection output directory")
+    parser.add_argument("--config", type=Path, default=None, help="structural config JSON")
+    parser.add_argument("--overwrite", action="store_true")
+    args = parser.parse_args(argv)
+
+    try:
+        settings = get_settings()
+        configure_logging(settings.log_level, settings.secret_values())
+        summary = run_structural_assessment(
+            args.datasets, args.detection, load_structural_config(args.config),
+            overwrite=args.overwrite,
+        )
+    except AgentSOCError as exc:
+        print(f"[FAIL] {exc}")
+        return 1
+
+    kinds = ", ".join(f"{k}={v}" for k, v in sorted(summary.paths_by_kind.items())) or "none"
+    print(f"[ OK ] {summary.incidents_assessed} incidents assessed; paths: {kinds}; "
+          f"truncated context: {summary.truncated_incidents}")
+    print(f"[ OK ] results written to {args.detection / 'structural'}")
+    return 0
+
+
+def assess_risk_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Score incidents with RSEM (needs a stored structural assessment)."
+    )
+    parser.add_argument("--detection", type=Path, required=True, help="detection output directory")
+    parser.add_argument("--config", type=Path, default=None, help="risk config JSON")
+    parser.add_argument("--overwrite", action="store_true")
+    args = parser.parse_args(argv)
+
+    from agentsoc.risk.assess import run_risk_assessment
+    from agentsoc.risk.config import load_risk_config
+
+    try:
+        settings = get_settings()
+        configure_logging(settings.log_level, settings.secret_values())
+        summary = run_risk_assessment(
+            args.detection, load_risk_config(args.config), overwrite=args.overwrite,
+        )
+    except AgentSOCError as exc:
+        print(f"[FAIL] {exc}")
+        return 1
+
+    bands = ", ".join(f"{k}={v}" for k, v in sorted(summary.bands.items())) or "none"
+    print(f"[ OK ] {summary.incidents_scored} incidents scored; bands: {bands}")
+    print(f"[ OK ] results written to {args.detection / 'risk'}")
+    return 0
+
+
 def generate_scenarios_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Write the deterministic SYNTHETIC LANL-format scenario file."
     )
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--set", dest="scenario_set", choices=["demo", "lateral", "structural", "risk"],
+        default="demo",
+        help="demo: 4-day enterprise scenario; lateral / structural / risk: Target 1-3 scenarios",
+    )
     args = parser.parse_args(argv)
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    generators = {"demo": generate_scenario_text, "lateral": generate_lateral_scenario_text,
+                  "structural": generate_structural_scenario_text,
+                  "risk": generate_risk_scenario_text}
+    text = generators[args.scenario_set]()
     with args.out.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(generate_scenario_text())
+        handle.write(text)
     print(f"[ OK ] synthetic scenarios written to {args.out}")
     return 0

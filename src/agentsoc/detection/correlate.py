@@ -8,7 +8,7 @@ Cross-user correlation (e.g. by shared host) is not performed.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import timedelta
 
 from agentsoc.detection.catalog import (
@@ -24,17 +24,41 @@ from agentsoc.detection.config import DetectionConfig, SeverityPolicy
 from agentsoc.schemas import AuthEvent, DatasetSource, Finding, Incident, Severity
 
 SEVERITY_ORDER = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
+_UNSCORED_REASON = {
+    RuleId.NEW_SRC_HOST: "its events are departures already counted by CROSS_ACCOUNT_PIVOT",
+    RuleId.CROSS_ACCOUNT_PIVOT: "its departure events are already counted by NEW_SRC_HOST",
+}
 
 
 def incident_severity(
-    rule_ids: Sequence[RuleId], *, is_admin: bool, policy: SeverityPolicy
+    rule_ids: Sequence[RuleId],
+    *,
+    is_admin: bool,
+    policy: SeverityPolicy,
+    reduced_rules: Collection[RuleId] = (),
+    unscored_rules: Collection[RuleId] = (),
 ) -> tuple[Severity, str]:
     """Band the sum of points over DISTINCT rules; optionally lower one band for admins.
 
+    `reduced_rules` lose `jump_host_point_reduction` points, never below 1. `unscored_rules`
+    add nothing because another rule already scored the same events.
+
     This is a triage priority for a human analyst, not a probability of compromise.
     """
-    distinct = sorted(set(rule_ids))
-    total = sum(policy.points[r] for r in distinct)
+    distinct = sorted(set(rule_ids) - set(unscored_rules))
+
+    def points(rule: RuleId) -> int:
+        base = policy.points[rule]
+        if rule not in reduced_rules:
+            return base
+        return max(min(1, base), base - policy.jump_host_point_reduction)
+
+    def term(rule: RuleId) -> str:
+        if points(rule) == policy.points[rule]:
+            return f"{rule}={points(rule)}"
+        return f"{rule}={points(rule)} (base {policy.points[rule]}, configured jump host path)"
+
+    total = sum(points(r) for r in distinct)
     if total >= policy.critical_at:
         band = Severity.CRITICAL
     elif total >= policy.high_at:
@@ -43,15 +67,44 @@ def incident_severity(
         band = Severity.MEDIUM
     else:
         band = Severity.LOW
-    terms = " + ".join(f"{r}={policy.points[r]}" for r in distinct)
+    terms = " + ".join(term(r) for r in distinct)
     rationale = (
         f"Points over distinct rules: {terms} = {total}. Bands: MEDIUM>={policy.medium_at}, "
         f"HIGH>={policy.high_at}, CRITICAL>={policy.critical_at} -> {band}."
     )
+    for rule in sorted(unscored_rules):
+        rationale += f" {rule} not scored: {_UNSCORED_REASON[rule]}."
     if is_admin and policy.downgrade_admin_users and band is not Severity.LOW:
         band = SEVERITY_ORDER[SEVERITY_ORDER.index(band) - 1]
         rationale += f" Lowered one band to {band}: principal is a configured admin account."
     return band, rationale
+
+
+def severity_for_findings(
+    findings: Sequence[Finding], *, is_admin: bool, policy: SeverityPolicy
+) -> tuple[Severity, str]:
+    """Incident severity from its findings, without scoring the same evidence twice.
+
+    A rule is reduced only if ALL its findings carry a jump-host adjustment. A pivot's
+    departure is also a NEW_SRC_HOST event, so the two rules count once: NEW_SRC_HOST is
+    dropped if pivots cover all of its events, otherwise the pivot is.
+    """
+    by_rule: dict[RuleId, list[Finding]] = {}
+    for finding in findings:
+        by_rule.setdefault(RuleId(finding.rule_id), []).append(finding)
+    reduced = {rule for rule, group in by_rule.items()
+               if all("severity_adjustment" in f.metrics for f in group)}
+    departures = {f.metrics["departure_event_id"]
+                  for f in by_rule.get(RuleId.CROSS_ACCOUNT_PIVOT, [])}
+    new_source_events = {e for f in by_rule.get(RuleId.NEW_SRC_HOST, []) for e in f.event_ids}
+    unscored: set[RuleId] = set()
+    if departures & new_source_events:
+        unscored.add(RuleId.NEW_SRC_HOST if new_source_events <= departures
+                     else RuleId.CROSS_ACCOUNT_PIVOT)
+    return incident_severity(
+        list(by_rule), is_admin=is_admin, policy=policy, reduced_rules=reduced,
+        unscored_rules=unscored,
+    )
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -73,8 +126,8 @@ def _build_incident(
     rule_ids = sorted({RuleId(f.rule_id) for f in findings})
     datasets = sorted({e.dataset for e in events})
     is_admin = principal in config.admin_users
-    severity, rationale = incident_severity(
-        rule_ids, is_admin=is_admin, policy=config.severity_policy
+    severity, rationale = severity_for_findings(
+        findings, is_admin=is_admin, policy=config.severity_policy
     )
 
     benign = [ADMIN_EXPLANATION] if is_admin else []

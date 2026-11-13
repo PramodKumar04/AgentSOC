@@ -1,4 +1,7 @@
-"""AgentSOC SOC dashboard (demo MVP).
+"""AgentSOC SOC dashboard (demo MVP) — DEPRECATED.
+
+Superseded by the web application (FastAPI `agentsoc.api` + React `frontend/`).
+Kept working until the web app has been reviewed; see README.
 
 Run from the project root:  streamlit run app/streamlit_app.py
 
@@ -114,6 +117,8 @@ def llm_status() -> tuple[str, str | None]:
 
 
 def sidebar(sources: list[Source]) -> tuple[Source, str, bool]:
+    st.sidebar.warning("Deprecated: this Streamlit dashboard is superseded by the AgentSOC web "
+                       "application (see README, 'Run the web application').")
     st.sidebar.markdown("## 🛡️ AgentSOC")
     st.sidebar.caption("Agentic AI framework for authentication-centric SOC triage — "
                        "academic research prototype")

@@ -16,9 +16,13 @@ from agentsoc.schemas import Incident, InvestigationResult
 INVESTIGATIONS_DIR = "investigations"
 
 
+def investigation_id(incident: Incident) -> str:
+    """Stable ID of the saved investigation for this exact incident content."""
+    return f"{incident.incident_id}-{incident_sha256(incident)[:16]}"
+
+
 def _path(detection_dir: Path, incident: Incident) -> Path:
-    return (Path(detection_dir) / INVESTIGATIONS_DIR
-            / f"{incident.incident_id}-{incident_sha256(incident)[:16]}.json")
+    return Path(detection_dir) / INVESTIGATIONS_DIR / f"{investigation_id(incident)}.json"
 
 
 def save_investigation(detection_dir: Path, incident: Incident,
