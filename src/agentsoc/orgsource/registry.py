@@ -11,11 +11,12 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, StringConstraints, ValidationError
+from pydantic import Field, StringConstraints, ValidationError, model_validator
 
-from agentsoc.connectors.postgres import Name, PostgresSettings
+from agentsoc.connectors.postgres import Name
+from agentsoc.connectors.settings import ConnectionSettings, with_engine
 from agentsoc.exceptions import AgentSOCError
 from agentsoc.ingest.mapping import ColumnName, MappingSpec
 from agentsoc.schemas.common import Contract
@@ -46,8 +47,8 @@ class SnapshotPolicy(Contract):
 
 
 class DataSourceConfig(Contract):
-    kind: Literal["postgresql"] = "postgresql"
-    connection: PostgresSettings
+    kind: Literal["postgresql", "mysql"] = "postgresql"
+    connection: ConnectionSettings
     table: TableName
     # Rows are read in (cursor, record id) order. The cursor should only grow for new rows:
     # an insert sequence or an "ingested at" time, not the time the event happened.
@@ -60,6 +61,20 @@ class DataSourceConfig(Contract):
     sync_interval_seconds: int = Field(default=60, ge=MIN_SYNC_INTERVAL, le=86_400)
     snapshot: SnapshotPolicy = Field(default_factory=SnapshotPolicy)
     mapping: MappingSpec
+
+    @model_validator(mode="before")
+    @classmethod
+    def _engine_from_kind(cls, data: Any) -> Any:
+        if isinstance(data, dict) and isinstance(data.get("connection"), dict):
+            kind = data.get("kind", "postgresql")
+            data = {**data, "connection": with_engine(data["connection"], kind)}
+        return data
+
+    @model_validator(mode="after")
+    def _kind_matches_connection(self) -> DataSourceConfig:
+        if self.connection.engine != self.kind:
+            raise ValueError("the connection's engine must match the source's kind")
+        return self
 
     @property
     def key_column(self) -> str:

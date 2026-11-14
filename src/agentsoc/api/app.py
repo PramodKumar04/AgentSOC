@@ -16,25 +16,27 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from agentsoc import __version__
 from agentsoc.api import models as m
 from agentsoc.api.datasources import datasource_router
+from agentsoc.api.review_service import ReviewRequestError
 from agentsoc.api.service import (
     BadRequestError,
     InvestigationFailedError,
     NotFoundError,
     Service,
 )
-from agentsoc.auth.api import auth_router, current_user, require_csrf
+from agentsoc.auth.api import CurrentUser, auth_router, current_user, require_csrf
 from agentsoc.auth.service import AuthService
 from agentsoc.config import PROJECT_ROOT, get_settings
 from agentsoc.credentials import open_credential_store
 from agentsoc.exceptions import AgentSOCError
 from agentsoc.logging_setup import configure_logging, get_logger
 from agentsoc.orgsource.manager import DataSourceManager, SyncScheduler
+from agentsoc.review.report import render_markdown
 from agentsoc.schemas.graph import StructuralAssessment
 from agentsoc.schemas.graph_view import IncidentGraph
 
@@ -112,6 +114,10 @@ def create_app(service: Service | None = None, *, serve_frontend: bool = True,
     def _bad_request(_: Request, exc: BadRequestError) -> JSONResponse:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
 
+    @app.exception_handler(ReviewRequestError)
+    def _review_refused(_: Request, exc: ReviewRequestError) -> JSONResponse:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
     @app.exception_handler(InvestigationFailedError)
     def _inv_failed(_: Request, exc: InvestigationFailedError) -> JSONResponse:
         return JSONResponse(status_code=503, content={
@@ -151,10 +157,50 @@ def create_app(service: Service | None = None, *, serve_frontend: bool = True,
                       "findings"] = "severity",
         order: Literal["asc", "desc"] = "asc",
         page: PageNo = 1, page_size: PageSize = 25,
+        review: Annotated[list[m.ReviewStatus], Query()] = [],  # noqa: B006
     ) -> m.Page[m.IncidentSummary]:
         return svc.list_incidents(source, q=q, severity=list(severity),
                                   provenance=list(provenance), rule=rule, sort=sort,
-                                  order=order, page=page, page_size=page_size)
+                                  order=order, page=page, page_size=page_size,
+                                  review=list(review))
+
+    # Human in the loop: the analyst decides; AgentSOC records, gathers context, reports.
+    @protected.get("/api/incidents/{incident_id}/review", response_model=m.ReviewState)
+    def incident_review(incident_id: IncidentId, source: SourceKey = None) -> m.ReviewState:
+        return svc.incident_review(source, incident_id)
+
+    @protected.post("/api/incidents/{incident_id}/review", response_model=m.ReviewState,
+                    dependencies=[Depends(require_csrf)])
+    def submit_review(incident_id: IncidentId, body: m.ReviewRequest, user: CurrentUser,
+                      source: SourceKey = None) -> m.ReviewState:
+        return svc.submit_review(source, incident_id, body, analyst=user.username)
+
+    @protected.get("/api/incidents/{incident_id}/context", response_model=m.ContextView)
+    def incident_context(incident_id: IncidentId, source: SourceKey = None,
+                         window_hours: Annotated[int, Query(ge=1, le=72)] = 24,
+                         ) -> m.ContextView:
+        return svc.incident_context(source, incident_id, window_hours)
+
+    @protected.get("/api/incidents/{incident_id}/agents", response_model=m.AgentAnalysisView)
+    def incident_agents(incident_id: IncidentId, source: SourceKey = None,
+                        window_hours: Annotated[int | None, Query(ge=1, le=72)] = None,
+                        ) -> m.AgentAnalysisView:
+        """Orchestrated specialised agents. `window_hours`: the analyst asked for more."""
+        return svc.incident_agents(source, incident_id, window_hours)
+
+    @protected.get("/api/incidents/{incident_id}/report", response_model=m.ReportView)
+    def incident_report(incident_id: IncidentId, user: CurrentUser,
+                        source: SourceKey = None) -> m.ReportView:
+        return svc.incident_report(source, incident_id, generated_by=user.username)
+
+    @protected.get("/api/incidents/{incident_id}/report.md")
+    def incident_report_markdown(incident_id: IncidentId, user: CurrentUser,
+                                 source: SourceKey = None) -> Response:
+        report = svc.incident_report(source, incident_id, generated_by=user.username)
+        svc.report_exported(source, incident_id, analyst=user.username)
+        name = f"agentsoc-{report.incident.source_key}-{report.incident.incident_id}.md"
+        return Response(render_markdown(report), media_type="text/markdown; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     @protected.get("/api/incidents/{incident_id}", response_model=m.IncidentDetail)
     def incident(incident_id: IncidentId, source: SourceKey = None) -> m.IncidentDetail:

@@ -94,21 +94,27 @@ describe("incidents", () => {
     expect(screen.getByText(/not a confirmed compromise/)).toBeInTheDocument();
   });
 
-  it("renders the timeline and detection analysis tabs", async () => {
+  it("shows detection findings in the summary and the timeline under evidence", async () => {
     mockApi(baseRoutes());
     const user = userEvent.setup();
     renderApp("/incidents/INC-00002");
-    await user.click(await screen.findByRole("tab", { name: /Timeline/ }));
-    expect(await screen.findByText("SRV-APP-02 → DB-FIN-01")).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: /Detection analysis/ }));
     expect(await screen.findByText("Sequential host-to-host authentication chain")).toBeInTheDocument();
     expect(screen.getByText(/FAILURE_BURST=2 \+ LATERAL_CHAIN=3/)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Evidence/ }));
+    expect(await screen.findByText("SRV-APP-02 → DB-FIN-01")).toBeInTheDocument();
+  });
+
+  it("opens links made for the old Timeline and Detection tabs", async () => {
+    mockApi(baseRoutes());
+    renderApp("/incidents/INC-00002?tab=timeline");
+    expect(await screen.findByRole("tab", { name: /Evidence/, selected: true })).toBeInTheDocument();
   });
 
   it("shows real evidence with expandable details and missing fields marked", async () => {
     mockApi(baseRoutes());
     const user = userEvent.setup();
     renderApp("/incidents/INC-00002?tab=evidence");
+    await user.click(await screen.findByRole("button", { name: "Table" }));
     await user.click(await screen.findByRole("button", { name: "auth.txt-116" }));
     expect(screen.getByText("Source line")).toBeInTheDocument();
     expect(screen.getByText("missing (not recorded)")).toBeInTheDocument();

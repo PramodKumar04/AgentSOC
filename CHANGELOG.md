@@ -4,6 +4,72 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Multi-agent investigation (proposed architecture) — awaiting review
+
+#### Added
+- **MySQL connector** (`connectors/mysql.py`, PyMySQL 1.1.1): read-only sessions verified
+  with `@@transaction_read_only`, client-side read timeouts, backtick-quoted identifiers,
+  listing limited to the configured database, fixed error messages. The Connections page
+  offers PostgreSQL or MySQL, with each engine's default port. Application database schema 4
+  allows MySQL sources; existing rows are copied unchanged. Verified against a simulated
+  driver only; not yet verified against a real MySQL server.
+- **How to stop this** (`agents/response.py`): a response plan after correlation. It sets
+  the posture (contain now, verify first, monitor, or closed when dismissed) and lists steps in
+  four phases (contain, investigate, recover, prevent). Each step names its evidence and the
+  agents behind it, is marked disruptive when it needs approval, and is flagged when the risk
+  engine proposed the same action. Nothing is executed. Shown on the Agents tab, in the
+  pipeline, in the report and in the Markdown export.
+- **Agent orchestrator** (`agents/orchestrator.py`) creates one task per specialised agent,
+  runs them in parallel with a time limit, and isolates failures (a failed or slow agent is
+  reported as such; the others still finish).
+- **Specialised agents**, all deterministic and read-only:
+  - Identity: the account against its own history (failure rate, first-time hosts and source
+    hosts, unusual hours, administrator or service accounts).
+  - Network / host: connections never seen before, fan-out, sensitive and jump hosts, SSE
+    paths and choke points; with more evidence, other accounts on the same hosts, spraying
+    patterns and possible account switches.
+  - Threat intelligence: offline MITRE ATT&CK mapping and an optional local watchlist
+    (`config/threat_intel.json`; see `.example.json`). No external feed is queried.
+  - Endpoint: AgentSOC has no endpoint telemetry, so it reports *unavailable* and lists the
+    endpoint records to request for each host. It never invents findings.
+- **Incident correlation agent** combines findings by account and host: corroborated (two or
+  more agents), conflicts (agents disagree), open questions.
+- The **reasoning layer** (AI investigation) receives the correlated findings as an extra
+  untrusted data block; without them its prompt is unchanged. The fallback is unchanged.
+- **More evidence** re-runs the agents over ±1/6/24/72 h. `GET /api/incidents/{id}/agents`.
+  New **Agents** tab with the pipeline, each agent's findings and gaps, and the correlation.
+  The report includes the agents section.
+
+#### Not changed
+- Detection, SSE, RSEM; stored outputs; response actions stay dry-run.
+
+### Analyst decisions (human in the loop) and a tidier workspace — awaiting review
+
+#### Added
+- Every incident has an **analyst decision**: Accept (confirmed, needs follow-up), Dismiss
+  (reason required: expected activity, false positive, duplicate, authorised test, or other
+  with a note), or **More evidence**. Decisions are append-only, tied to the incident's
+  content hash, audited (`incident.*`), and can be reopened. They never execute anything.
+- **More evidence:** AgentSOC searches the same verified data (±1/6/24/72 h). It finds the
+  account's other activity, activity on the same hosts, whether each connection was ever seen
+  before, and related incidents. It reports facts only.
+- **Full report** per incident (`/incidents/:id/report`): decision history, summary, findings,
+  timeline, attack paths, risk and dry-run proposals, investigation, wider context,
+  limitations and provenance. Print or save as PDF, or download Markdown (escaped; audited).
+- API: `GET/POST /api/incidents/{id}/review`, `GET …/context`, `GET …/report`,
+  `GET …/report.md`, and `review=` filter on `/api/incidents`. Application database schema 3.
+
+#### Changed
+- Incident page: a decision bar above the tabs; 8 tabs merged into 6 (Summary now includes
+  detection findings; Evidence holds the timeline, the table and the wider context). Old
+  `?tab=timeline` and `?tab=detection` links still work.
+- Incident list is a review queue with decision filters and a Decision column. The overview
+  starts with the number of incidents awaiting a decision. The menu is grouped into Triage,
+  Investigate, Data & audit, and Administration.
+
+#### Not changed
+- Detection, SSE, RSEM and investigator logic; stored outputs; response actions stay dry-run.
+
 ### Organisation databases: mapping (C) and PostgreSQL connector (D) — awaiting review
 
 **The PostgreSQL connector is tested against a simulated database only. It is not yet

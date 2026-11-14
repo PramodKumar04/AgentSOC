@@ -8,6 +8,7 @@ import { ErrorState, LoadingBlock } from "@/components/ui/states";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AccountPage, UsersPage } from "@/pages/AccountPages";
 import { ConnectionsPage } from "@/pages/ConnectionsPage";
+import { ReportPage } from "@/pages/ReportPage";
 import { ActivityPage } from "@/pages/ActivityPage";
 import { DataSourcesPage } from "@/pages/DataSourcesPage";
 import { EvidencePage } from "@/pages/EvidencePage";
@@ -39,6 +40,7 @@ function Gate() {
           <Route index element={<OverviewPage />} />
           <Route path="incidents" element={<IncidentsPage />} />
           <Route path="incidents/:incidentId" element={<IncidentDetailPage />} />
+          <Route path="incidents/:incidentId/report" element={<ReportPage />} />
           <Route path="investigations" element={<InvestigationsPage />} />
           <Route path="investigations/:investigationId" element={<InvestigationDetailPage />} />
           <Route path="evidence" element={<EvidencePage />} />

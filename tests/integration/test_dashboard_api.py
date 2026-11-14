@@ -231,7 +231,9 @@ class TestSeverityAndRiskStaySeparate:
             path for path, ops in paths.items()
             if set(ops) & {"post", "put", "patch", "delete"}
             and not path.startswith(("/api/auth/", "/api/admin/users", "/api/admin/datasources")))
-        assert changing == ["/api/incidents/{incident_id}/investigate"]
+        # Investigating and recording an analyst's decision change state; neither acts.
+        assert changing == ["/api/incidents/{incident_id}/investigate",
+                            "/api/incidents/{incident_id}/review"]
         assert not [path for path in paths if "action" in path]
         for verb in ("approve", "execute"):
             assert client.post(f"/api/incidents/INC-00002/actions/A/{verb}").status_code == 404

@@ -3,7 +3,7 @@ import {
   Activity, BrainCircuit, Cable, ChevronRight, Database, FileSearch, LayoutDashboard, LogOut, Menu,
   PanelLeftClose, PanelLeftOpen, ShieldAlert, ShieldCheck, UserRound, Users, X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 import { ProvenanceBadge } from "@/components/domain";
@@ -14,15 +14,16 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useSource } from "./source-context";
 
+// Grouped by what the analyst is doing: triage, then investigation, then data and audit.
 const NAV = [
-  { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
-  { to: "/incidents", label: "Incidents", icon: ShieldAlert },
-  { to: "/investigations", label: "Investigations", icon: BrainCircuit },
-  { to: "/evidence", label: "Evidence Explorer", icon: FileSearch },
-  { to: "/data-sources", label: "Data Sources", icon: Database },
-  { to: "/activity", label: "System Activity", icon: Activity },
-  { to: "/admin/connections", label: "Database Connections", icon: Cable, adminOnly: true },
-  { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
+  { to: "/", label: "Overview", icon: LayoutDashboard, end: true, group: "Triage" },
+  { to: "/incidents", label: "Incidents", icon: ShieldAlert, group: "Triage" },
+  { to: "/investigations", label: "Investigations", icon: BrainCircuit, group: "Investigate" },
+  { to: "/evidence", label: "Evidence Explorer", icon: FileSearch, group: "Investigate" },
+  { to: "/data-sources", label: "Data Sources", icon: Database, group: "Data & audit" },
+  { to: "/activity", label: "System Activity", icon: Activity, group: "Data & audit" },
+  { to: "/admin/connections", label: "Database Connections", icon: Cable, adminOnly: true, group: "Administration" },
+  { to: "/admin/users", label: "Users", icon: Users, adminOnly: true, group: "Administration" },
 ];
 const OTHER_SECTIONS: Record<string, string> = { account: "Your account", admin: "Administration" };
 
@@ -43,7 +44,7 @@ function Sidebar({ collapsed, onToggle, mobileOpen, onClose }: {
       {mobileOpen && <div className="fixed inset-0 z-30 bg-ink/40 lg:hidden" onClick={onClose} aria-hidden />}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col bg-sidebar text-sidebar-text transition-[width,transform] duration-200",
+          "fixed inset-y-0 left-0 z-40 flex flex-col bg-sidebar print:hidden text-sidebar-text transition-[width,transform] duration-200",
           collapsed ? "lg:w-16" : "lg:w-60", "w-64",
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
@@ -64,10 +65,17 @@ function Sidebar({ collapsed, onToggle, mobileOpen, onClose }: {
           </button>
         </div>
 
-        <nav aria-label="Primary" className="flex-1 space-y-0.5 px-2.5 py-4">
-          {nav.map(({ to, label, icon: Icon, end }) => (
+        <nav aria-label="Primary" className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3">
+          {nav.map(({ to, label, icon: Icon, end, group }, index) => (
+            <Fragment key={to}>
+            {group !== nav[index - 1]?.group && (
+              <div className={cn("px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-sidebar-muted",
+                                 index > 0 && "pt-4", collapsed && "lg:sr-only")}>
+                {group}
+              </div>
+            )}
             <NavLink
-              key={to} to={to} end={end} onClick={onClose} title={collapsed ? label : undefined}
+              to={to} end={end} onClick={onClose} title={collapsed ? label : undefined}
               className={({ isActive }) => cn(
                 "group relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13px] font-medium transition-colors",
                 isActive ? "bg-sidebar-2 text-white" : "text-sidebar-text/85 hover:bg-sidebar-2/60 hover:text-white",
@@ -82,6 +90,7 @@ function Sidebar({ collapsed, onToggle, mobileOpen, onClose }: {
                 </>
               )}
             </NavLink>
+            </Fragment>
           ))}
         </nav>
 
@@ -124,7 +133,8 @@ function crumbsFor(pathname: string) {
   if (section && section.to === pathname && parts.length > 1) return [{ label: section.label }];
   const label = section?.label ?? OTHER_SECTIONS[parts[0]] ?? "Not found";
   const crumbs: { label: string; to?: string }[] = [{ label, to: parts.length > 1 ? `/${parts[0]}` : undefined }];
-  if (parts[1]) crumbs.push({ label: decodeURIComponent(parts[1]) });
+  if (parts[1]) crumbs.push({ label: decodeURIComponent(parts[1]), to: parts[2] ? `/${parts[0]}/${parts[1]}` : undefined });
+  if (parts[2] === "report") crumbs.push({ label: "Report" });
   return crumbs;
 }
 
@@ -151,7 +161,7 @@ function Header({ onMenu }: { onMenu: () => void }) {
   const { sources, source, setSource } = useSource();
   const crumbs = crumbsFor(pathname);
   return (
-    <header className="sticky top-0 z-20 flex h-14 min-w-0 items-center gap-3 border-b border-border bg-surface/95 px-4 backdrop-blur lg:px-6">
+    <header className="sticky top-0 z-20 flex print:hidden h-14 min-w-0 items-center gap-3 border-b border-border bg-surface/95 px-4 backdrop-blur lg:px-6">
       <button className="rounded p-1.5 text-muted hover:bg-subtle lg:hidden" onClick={onMenu} aria-label="Open navigation">
         <Menu className="size-5" />
       </button>
@@ -203,7 +213,7 @@ export function AppShell() {
         Skip to content
       </a>
       <Sidebar collapsed={collapsed} onToggle={toggle} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
-      <div className={cn("transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-60")}>
+      <div className={cn("transition-[padding] duration-200 print:pl-0", collapsed ? "lg:pl-16" : "lg:pl-60")}>
         <Header onMenu={() => setMobileOpen(true)} />
         <main id="main" className="mx-auto max-w-[1400px] px-4 py-6 lg:px-8">
           {isLoading ? <LoadingBlock label="Connecting to AgentSOC…" />

@@ -22,7 +22,7 @@ from agentsoc.connectors.base import (
     SourceConnector,
     TableRef,
 )
-from agentsoc.connectors.postgres import PostgresConnector, PostgresSettings
+from agentsoc.connectors.settings import ConnectionSettings, connector_for
 from agentsoc.credentials import CredentialStore
 from agentsoc.ingest.mapping import MappingSpec, map_record
 from agentsoc.logging_setup import get_logger, register_secret
@@ -49,7 +49,7 @@ from agentsoc.schemas.events import RawRef
 
 logger = get_logger(__name__)
 
-ConnectorFactory = Callable[[PostgresSettings, SecretStr], SourceConnector]
+ConnectorFactory = Callable[[ConnectionSettings, SecretStr], SourceConnector]
 PREVIEW_ROWS = 50
 
 
@@ -79,7 +79,7 @@ class DataSourceManager:
         self.credentials = credentials
         self.audit = audit
         self.data_root = Path(data_root)
-        self.connector_factory = connector_factory or PostgresConnector
+        self.connector_factory = connector_factory or connector_for
         self.on_snapshot = on_snapshot or (lambda: None)
         self._snapshot_lock = threading.Lock()
 
@@ -92,11 +92,11 @@ class DataSourceManager:
             raise DataSourceError("Enter the database password.")
         return self.credentials.get(self.registry.get(key).credential_ref)
 
-    def connector(self, connection: PostgresSettings, password: SecretStr | None = None,
+    def connector(self, connection: ConnectionSettings, password: SecretStr | None = None,
                   key: str | None = None) -> SourceConnector:
         return self.connector_factory(connection, self._password(password, key))
 
-    def test(self, connection: PostgresSettings, password: SecretStr | None,
+    def test(self, connection: ConnectionSettings, password: SecretStr | None,
              key: str | None) -> ConnectionReport:
         subject = key or f"{connection.host}/{connection.database}"
         try:
@@ -110,15 +110,15 @@ class DataSourceManager:
                            "warnings": len(report.warnings)})
         return report
 
-    def tables(self, connection: PostgresSettings, password: SecretStr | None,
+    def tables(self, connection: ConnectionSettings, password: SecretStr | None,
                key: str | None) -> list[TableRef]:
         return self.connector(connection, password, key).list_tables()
 
-    def columns(self, connection: PostgresSettings, password: SecretStr | None,
+    def columns(self, connection: ConnectionSettings, password: SecretStr | None,
                 key: str | None, table: TableRef) -> list[Column]:
         return self.connector(connection, password, key).list_columns(table)
 
-    def preview(self, connection: PostgresSettings, password: SecretStr | None,
+    def preview(self, connection: ConnectionSettings, password: SecretStr | None,
                 key: str | None, table: TableRef, cursor_column: str,
                 mapping: MappingSpec) -> Preview:
         """Map the first rows without storing anything, to check a mapping before saving."""

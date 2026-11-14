@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generic, Literal, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agentsoc.schemas import PathValidation
 from agentsoc.schemas.rsem import ConfidenceAssessment, IncidentRiskRecord
@@ -16,6 +16,7 @@ Severity = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"]
 Provenance = Literal["synthetic", "lanl", "upload", "organization"]
 InvestigationStatus = Literal["none", "completed", "completed_limited", "stale"]
 AssessmentState = Literal["available", "not_assessed", "stale", "unavailable"]
+ReviewStatus = Literal["open", "accepted", "dismissed", "more_evidence"]
 
 
 class Page(BaseModel, Generic[T]):
@@ -69,6 +70,8 @@ class IncidentSummary(BaseModel):
     # From hash-checked, independently re-verified RSEM records. None = no record to show.
     risk_score: float | None = None
     risk_band: Severity | None = None
+    # The analyst's current decision on this exact incident version.
+    review_status: ReviewStatus = "open"
 
 
 class EventView(BaseModel):
@@ -150,6 +153,7 @@ class Overview(BaseModel):
     risk_status: AssessmentStatus
     risk_counts: dict[Severity, int] | None = None  # None when no verified records exist
     risk_assessed: int = 0
+    review_counts: dict[ReviewStatus, int] = {}
 
 
 class AttackTechnique(BaseModel):
@@ -296,3 +300,183 @@ class ActivityLog(BaseModel):
     entries: list[ActivityEntry]
     total: int
     chain_intact: bool
+
+
+# ------------------------------------------------------- analyst review (human in the loop)
+class ReviewEntryView(BaseModel):
+    decision: Literal["accepted", "dismissed", "more_evidence", "reopened"]
+    reason: str | None
+    note: str | None
+    window_hours: int | None
+    analyst: str
+    created_at: datetime
+    # False when the decision was made on an earlier version of this incident number.
+    current_version: bool
+
+
+class ReviewState(BaseModel):
+    status: ReviewStatus
+    latest: ReviewEntryView | None
+    history: list[ReviewEntryView]  # newest first
+
+
+class ReviewRequest(BaseModel):
+    decision: Literal["accepted", "dismissed", "more_evidence", "reopened"]
+    reason: Literal["expected_activity", "false_positive", "duplicate", "authorised_test",
+                    "other"] | None = None
+    note: str | None = Field(default=None, max_length=1000)
+    window_hours: Literal[1, 6, 24, 72] | None = None
+
+
+class HostActivityView(BaseModel):
+    host: str
+    events: int
+    failures: int
+    other_accounts: list[CountItem]
+
+
+class PairHistoryView(BaseModel):
+    src_host: str
+    dst_host: str
+    before: int
+    first_seen_label: str | None
+    after: int
+
+
+class RelatedIncidentView(BaseModel):
+    incident_id: str
+    principal_user: str
+    severity: Severity
+    first_seen_label: str
+    last_seen_label: str
+    relation: str
+    review_status: ReviewStatus
+
+
+class ContextView(BaseModel):
+    window_hours: int
+    window_start_label: str
+    window_end_label: str
+    account: str
+    account_events: int
+    account_failures: int
+    account_before: int
+    account_after: int
+    account_src_hosts: list[str]
+    account_dst_hosts: list[str]
+    account_first_seen_label: str | None
+    events: list[EventView]
+    events_truncated: bool
+    hosts: list[HostActivityView]
+    pairs: list[PairHistoryView]
+    related: list[RelatedIncidentView]
+    observations: list[str]
+    limitations: list[str]
+
+
+class PathBrief(BaseModel):
+    path_id: str
+    kind: str
+    verdict: str
+    hosts: list[str]
+    accounts: list[str]
+    reasons: list[str]
+
+
+class ReportView(BaseModel):
+    """Everything about one incident for the analyst's record. Read-only."""
+
+    generated_at: datetime
+    generated_by: str
+    source_label: str
+    dataset_label: str
+    dataset_sha256: str
+    detection_engine: str
+    incident: IncidentDetail
+    review: ReviewState
+    risk: RiskView | None
+    risk_unavailable: str | None
+    paths: list[PathBrief]
+    paths_unavailable: str | None
+    investigation: InvestigationView | None
+    context: ContextView | None
+    agents: AgentAnalysisView | None = None
+    notices: list[str]
+
+
+# ------------------------------------------------------- specialised agents and correlation
+class AgentFindingView(BaseModel):
+    statement: str
+    stance: Literal["suspicious", "benign", "context"]
+    strength: Literal["weak", "moderate", "strong"]
+    accounts: list[str]
+    hosts: list[str]
+    event_ids: list[str]
+    techniques: list[AttackTechnique]
+    expanded: bool
+
+
+class AgentReportView(BaseModel):
+    agent: str
+    title: str
+    purpose: str
+    status: Literal["completed", "no_findings", "unavailable", "failed"]
+    examined: list[str]
+    findings: list[AgentFindingView]
+    gaps: list[str]
+    duration_ms: float
+
+
+class CorrelatedEntityView(BaseModel):
+    kind: Literal["account", "host"]
+    name: str
+    suspicious_agents: list[str]
+    benign_agents: list[str]
+    findings: int
+
+
+class CorrelationView(BaseModel):
+    summary: str
+    entities: list[CorrelatedEntityView]
+    corroborated: list[str]
+    conflicts: list[str]
+    techniques: list[AttackTechnique]
+    open_questions: list[str]
+    unavailable_agents: list[str]
+    counts: dict[str, int]
+
+
+class AgentAnalysisView(BaseModel):
+    incident_id: str
+    source_key: str
+    mode: Literal["standard", "expanded"]
+    window_hours: int | None
+    generated_at: datetime
+    duration_ms: float
+    agents: list[AgentReportView]
+    correlation: CorrelationView
+    response_plan: ResponsePlanView | None = None
+
+
+# ---------------------------------------------------------------- how to stop the activity
+class ResponseStepView(BaseModel):
+    phase: Literal["contain", "investigate", "recover", "prevent"]
+    action: str
+    target: str | None
+    why: str
+    based_on: list[str]
+    action_type: str | None
+    risk_engine_proposed: bool
+    disruptive: bool
+
+
+class ResponsePlanView(BaseModel):
+    """Recommendations only: AgentSOC executes nothing (every action is dry-run)."""
+
+    posture: Literal["contain_now", "verify_first", "monitor", "closed"]
+    summary: str
+    steps: list[ResponseStepView]
+    notes: list[str]
+
+
+AgentAnalysisView.model_rebuild()

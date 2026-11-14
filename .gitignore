@@ -41,3 +41,6 @@ data/processed/
 /auth.txt/
 /redteam.txt/
 /*.txt.gz
+
+# Organisation-specific threat indicators (the .example.json is committed)
+config/threat_intel.json

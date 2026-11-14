@@ -4,8 +4,9 @@ import { Link, useNavigate } from "react-router";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AssessmentNotice } from "@/components/assessment";
-import { CHART, InvestigationBadge, ProvenanceBadge, RiskBadge, SEVERITY_COLOR, SeverityBadge } from "@/components/domain";
+import { CHART, ProvenanceBadge, RiskBadge, SEVERITY_COLOR, SeverityBadge } from "@/components/domain";
 import { PageHeader } from "@/components/layout/app-shell";
+import { ReviewBadge } from "@/components/review";
 import { useSource } from "@/components/layout/source-context";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingBlock } from "@/components/ui/states";
@@ -84,6 +85,23 @@ export function OverviewPage() {
         </span>}
       />
 
+      {data.incidents_total > 0 && (
+        <Card className="mb-4">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3.5">
+            <p className="text-sm text-ink">
+              <span className="text-lg font-semibold tabular">{(data.review_counts?.open ?? data.incidents_total).toLocaleString()}</span>{" "}
+              incident{(data.review_counts?.open ?? data.incidents_total) === 1 ? "" : "s"} awaiting your decision
+            </p>
+            <p className="text-xs text-muted">
+              {(data.review_counts?.more_evidence ?? 0)} need more evidence · {(data.review_counts?.accepted ?? 0)} accepted · {(data.review_counts?.dismissed ?? 0)} dismissed
+            </p>
+            <Link to="/incidents?review=open" className="ml-auto inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
+              Review the queue <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </div>
+        </Card>
+      )}
+
       <Card className="mb-6">
         <dl className="grid grid-cols-2 divide-border sm:grid-cols-4 lg:grid-cols-7 lg:divide-x [&>div]:border-border max-lg:[&>div]:border-b">
           <Stat label="Total incidents" value={data.incidents_total} />
@@ -146,7 +164,7 @@ export function OverviewPage() {
                   View all <ArrowRight className="size-3.5" aria-hidden /></Link>}
               />
               <Table>
-                <thead><tr><Th>Incident</Th><Th>User</Th><Th>Severity</Th><Th>Risk</Th><Th>Last observed</Th><Th>Status</Th></tr></thead>
+                <thead><tr><Th>Incident</Th><Th>User</Th><Th>Severity</Th><Th>Risk</Th><Th>Last observed</Th><Th>Decision</Th></tr></thead>
                 <tbody>
                   {data.recent_incidents.map((i) => (
                     <Tr key={i.incident_id} className="cursor-pointer" onClick={() => navigate(`/incidents/${i.incident_id}`)}>
@@ -155,7 +173,7 @@ export function OverviewPage() {
                       <Td><SeverityBadge severity={i.severity} /></Td>
                       <Td><RiskBadge band={i.risk_band} score={i.risk_score} /></Td>
                       <Td className="tabular text-muted">{i.last_seen_label}</Td>
-                      <Td><InvestigationBadge status={i.investigation_status} /></Td>
+                      <Td><ReviewBadge status={i.review_status} /></Td>
                     </Tr>
                   ))}
                 </tbody>

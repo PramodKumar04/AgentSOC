@@ -108,13 +108,14 @@ describe("URL tab navigation", () => {
     expect(await screen.findByText(text)).toBeInTheDocument();
   });
 
-  it("keeps the original tabs and falls back on an unknown tab", async () => {
+  it("has seven tabs and falls back to the summary on an unknown tab", async () => {
     mockApi(routes());
     renderApp("/incidents/INC-00002?tab=nonsense");
-    expect(await screen.findByRole("tab", { name: /Overview/, selected: true })).toBeInTheDocument();
-    for (const name of [/Timeline/, /Detection analysis/, /Evidence/, /Attack graph/, /Risk & response/, /AI investigation/, /Provenance/]) {
+    expect(await screen.findByRole("tab", { name: /Summary/, selected: true })).toBeInTheDocument();
+    for (const name of [/Agents/, /Evidence/, /Attack graph/, /Risk & response/, /AI investigation/, /Provenance/]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
+    expect(screen.getAllByRole("tab")).toHaveLength(7);
   });
 
   it("highlights a path named in the URL", async () => {

@@ -11,7 +11,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agentsoc import __version__
+from agentsoc.agents.orchestrator import prompt_payload
 from agentsoc.api import models as m
+from agentsoc.api.review_service import ReviewMixin
 from agentsoc.app_data import (
     LoadedSource,
     Source,
@@ -147,7 +149,7 @@ def _severity_rank(i: Incident) -> tuple:
     return (SEVERITY_ORDER.index(i.severity.value), i.first_seen, i.incident_id)
 
 
-class Service:
+class Service(ReviewMixin):
     def __init__(
         self,
         root: Path | None = None,
@@ -392,9 +394,11 @@ class Service:
             return "none"
         return "completed" if result.source.value == "llm" else "completed_limited"
 
-    def incident_summary(self, data: LoadedSource, inc: Incident,
-                         status: str | None = None) -> m.IncidentSummary:
+    def incident_summary(self, data: LoadedSource, inc: Incident, status: str | None = None,
+                         reviews: dict[str, str] | None = None) -> m.IncidentSummary:
         record = self._risk_for(data)[0].get(inc.incident_id)
+        review = (reviews.get(inc.incident_id, "open") if reviews is not None
+                  else self._review_state(data, inc).status)
         fmt = time_formatter(data.source)
         return m.IncidentSummary(
             incident_id=inc.incident_id, source_key=data.source.key,
@@ -407,6 +411,7 @@ class Service:
             investigation_status=status or self._investigation_status(data, inc),
             risk_score=record.risk.score if record else None,
             risk_band=record.risk.band.value if record else None,
+            review_status=review,
         )
 
     def overview(self, key: str | None) -> m.Overview:
@@ -419,6 +424,7 @@ class Service:
         records = self._risk_for(data)[0]
         current = {i.incident_id for i in incidents}
         bands = Counter(r.risk.band.value for k, r in records.items() if k in current)
+        reviews = self.review_statuses(data)
         return m.Overview(
             source=ref,
             dataset=m.DatasetBrief(label=data.manifest.dataset_label,
@@ -433,17 +439,22 @@ class Service:
                                           findings=n)
                            for r, n in data.summary["findings_by_rule"].items()],
             activity=[m.CountItem(label=k, count=v) for k, v in sorted(hours.items())],
-            recent_incidents=[self.incident_summary(data, i) for i in recent],
+            recent_incidents=[self.incident_summary(data, i, reviews=reviews) for i in recent],
             risk_status=self._risk_status[data.source.key],
             risk_counts={s: bands.get(s, 0) for s in SEVERITY_ORDER} if bands else None,
             risk_assessed=sum(bands.values()),
+            review_counts=dict(Counter(reviews.values())),
         )
 
     def list_incidents(self, key: str | None, *, q: str | None, severity: list[str],
                        provenance: list[str], rule: str | None, sort: str, order: str,
-                       page: int, page_size: int) -> m.Page[m.IncidentSummary]:
+                       page: int, page_size: int,
+                       review: list[str] | None = None) -> m.Page[m.IncidentSummary]:
         data = self.loaded(key)
         items = data.incidents
+        reviews = self.review_statuses(data)
+        if review:
+            items = [i for i in items if reviews[i.incident_id] in review]
         if q:
             needle = q.lower()
             items = [i for i in items if needle in i.incident_id.lower()
@@ -467,7 +478,7 @@ class Service:
             raise BadRequestError(f"cannot sort by '{sort}'")
         items = sorted(items, key=keys[sort], reverse=order == "desc")
         start = (page - 1) * page_size
-        return m.Page(items=[self.incident_summary(data, i)
+        return m.Page(items=[self.incident_summary(data, i, reviews=reviews)
                              for i in items[start:start + page_size]],
                       total=len(items), page=page, page_size=page_size)
 
@@ -629,7 +640,8 @@ class Service:
                     provider, reason = None, ("AI investigation is disabled for this "
                                               "organisational source")
                 result = InvestigatorAgent(provider, disabled_reason=reason).investigate(
-                    inc, events, is_admin=is_admin, structural=structural)
+                    inc, events, is_admin=is_admin, structural=structural,
+                    agent_findings=self._agent_findings_for_prompt(data, inc))
             except Exception:  # the agent never raises for LLM issues; this is a bug guard
                 logger.exception("investigation failed; retrying with deterministic analysis")
                 try:
@@ -650,6 +662,15 @@ class Service:
                 "source": data.source.key, "engine": result.source.value,
                 "latency_ms": result.latency_ms, "rerun": rerun})
             return self._view(data, inc, result, cached=False)
+
+    def _agent_findings_for_prompt(self, data: LoadedSource, inc: Incident) -> dict | None:
+        """The specialised agents' correlated findings, for the reasoning layer. An agent
+        problem never blocks an investigation: it runs without them."""
+        try:
+            return prompt_payload(self.agent_analysis(data, inc))
+        except Exception:
+            logger.exception("agent analysis failed; investigating without it")
+            return None
 
     def list_investigations(self) -> list[m.InvestigationSummary]:
         out = []

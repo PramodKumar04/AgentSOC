@@ -68,7 +68,7 @@ class InvestigatorAgent:
 
     def investigate(
         self, incident: Incident, events: Iterable[AuthEvent], *, is_admin: bool = False,
-        structural: StructuralEvidence | None = None,
+        structural: StructuralEvidence | None = None, agent_findings: dict | None = None,
     ) -> InvestigationResult:
         start = time.perf_counter()
         evidence = {e.event_id: e for e in events if e.event_id in set(incident.event_ids)}
@@ -100,7 +100,8 @@ class InvestigatorAgent:
             return self._fallback(incident, evidence, is_admin, sha, warnings, start, assessment,
                                   structural_sha)
 
-        user_prompt = build_user_prompt(incident, list(evidence.values()), assessment)
+        user_prompt = build_user_prompt(incident, list(evidence.values()), assessment,
+                                        agent_findings)
         feedback: str | None = None
         last_errors: list[str] = []
         for attempt in range(1 + self.repair_attempts):

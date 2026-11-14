@@ -55,6 +55,12 @@ class AuditEventType(StrEnum):
     DATASOURCE_AI_PERMISSION_CHANGED = "datasource.ai_permission_changed"
     SNAPSHOT_CREATED = "snapshot.created"
     SNAPSHOT_FAILED = "snapshot.failed"
+    # Analyst decisions on incidents.
+    INCIDENT_ACCEPTED = "incident.accepted"
+    INCIDENT_DISMISSED = "incident.dismissed"
+    INCIDENT_EVIDENCE_REQUESTED = "incident.evidence_requested"
+    INCIDENT_REOPENED = "incident.reopened"
+    INCIDENT_REPORT_EXPORTED = "incident.report_exported"
     SYNC_STARTED = "sync.started"
     SYNC_COMPLETED = "sync.completed"
     SYNC_FAILED = "sync.failed"

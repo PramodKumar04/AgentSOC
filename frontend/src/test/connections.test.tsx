@@ -86,7 +86,7 @@ describe("database connections", () => {
     }));
     const user = userEvent.setup();
     renderApp("/admin/connections");
-    await user.click(await screen.findByRole("button", { name: "Connect a PostgreSQL database" }));
+    await user.click(await screen.findByRole("button", { name: "Connect a database" }));
     await user.type(screen.getByLabelText("Name shown to analysts"), "HR auth");
     await user.type(screen.getByLabelText("Host"), "db.example.test");
     await user.type(screen.getByLabelText("Database"), "security");
@@ -123,7 +123,7 @@ describe("database connections", () => {
     // The password is sent, then cleared from the page.
     expect(saved.password).toBe("Db-pass-123456");
     expect(document.body.innerHTML).not.toContain("Db-pass-123456");
-  });
+  }, 20000); // a long, many-step interaction
 
   it("has no accessibility violations", async () => {
     mockApi(base());
@@ -133,3 +133,28 @@ describe("database connections", () => {
     expect(result.violations.map((v) => v.id)).toEqual([]);
   });
 });
+
+describe("database type", () => {
+  it("offers MySQL with its own default port and sends the engine with the test", async () => {
+    const { calls } = mockApi(base({
+      "GET /api/admin/datasources": () => [],
+      "POST /api/admin/datasources/test": () => ({ server_version: "8.0.36", account: "reader", read_only_session: true, warnings: [] }),
+    }));
+    const user = userEvent.setup();
+    renderApp("/admin/connections");
+    await user.click(await screen.findByRole("button", { name: "Connect a database" }));
+    await user.selectOptions(screen.getByLabelText("Database type"), "mysql");
+    expect(screen.getByLabelText("Port")).toHaveValue(3306);
+    expect(screen.getByRole("heading", { name: "Connect a MySQL database" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Encrypt if possible/ })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Name shown to analysts"), "Local MySQL");
+    await user.type(screen.getByLabelText("Host"), "127.0.0.1");
+    await user.type(screen.getByLabelText("Database"), "security");
+    await user.type(screen.getByLabelText("Account"), "reader");
+    await user.type(screen.getByLabelText("Password"), "My-pass-123456");
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText(/Connected to MySQL 8.0.36/)).toBeInTheDocument();
+    expect(bodyOf(calls, "POST", "/api/admin/datasources/test").connection).toMatchObject({ engine: "mysql", port: 3306 });
+  });
+});
+

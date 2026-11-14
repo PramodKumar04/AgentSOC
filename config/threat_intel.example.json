@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "indicators": [
+    {"type": "host", "value": "EXAMPLE-HOST-01", "label": "Example: host named in an internal incident ticket", "source": "replace with your ticket or report reference"},
+    {"type": "account", "value": "example.user@CORP", "label": "Example: account reported as compromised", "source": "replace with your source"}
+  ]
+}

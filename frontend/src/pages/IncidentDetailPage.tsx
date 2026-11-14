@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowLeft, CheckCircle2, ClipboardList, FileCheck2, FileText, Gauge, GitBranch, Network, ScanSearch,
-  ShieldAlert, XCircle,
+  ArrowLeft, CheckCircle2, ClipboardList, FileCheck2, FileText, Gauge, Network, ScanSearch,
+  Workflow, XCircle,
 } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { AttackGraphTab } from "@/components/graph/AttackGraphTab";
+import { AgentsTab } from "@/components/agents";
+import { DecisionPanel, ReviewBadge, WINDOWS } from "@/components/review";
 import { IncidentInvestigation } from "@/components/investigation";
 import { ProvenanceTab } from "@/components/provenance";
 import { RiskResponseTab } from "@/components/risk";
@@ -18,7 +20,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ErrorState, LoadingBlock } from "@/components/ui/states";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api, ApiError, type EventView, type IncidentDetail } from "@/lib/api";
+import { api, ApiError, type ContextWindow, type EventView, type IncidentDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const METRIC_LABELS: Record<string, string> = {
@@ -50,37 +52,33 @@ function List({ items, initial = 4 }: { items: string[]; initial?: number }) {
   );
 }
 
-function OverviewTab({ inc }: { inc: IncidentDetail }) {
+function SummaryTab({ inc }: { inc: IncidentDetail }) {
   return (
     <div className="grid items-start gap-6 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader title="Summary" />
-        <CardBody className="space-y-4">
-          <p className="text-sm text-ink-2">{inc.description}</p>
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-            <div><dt className="text-xs text-muted">Affected users</dt>
-              <dd className="mt-0.5 flex flex-wrap gap-1.5">{inc.involved_users.map((u) => <Mono key={u}>{u}</Mono>)}</dd></div>
-            <div><dt className="text-xs text-muted">Affected hosts</dt>
-              <dd className="mt-0.5 flex flex-wrap gap-x-2 gap-y-1">{inc.involved_hosts.map((h) => <Mono key={h}>{h}</Mono>)}</dd></div>
-            <div><dt className="text-xs text-muted">Evidence events</dt><dd className="tabular mt-0.5 text-ink">{inc.evidence_count}</dd></div>
-            <div><dt className="text-xs text-muted">Detection findings</dt><dd className="tabular mt-0.5 text-ink">{inc.finding_count} across {inc.rule_ids.length} rules</dd></div>
-            <div className="sm:col-span-2"><dt className="text-xs text-muted">Triggered rules</dt>
-              <dd className="mt-1 flex flex-wrap gap-1.5">{inc.findings.filter((f, i, a) => a.findIndex((x) => x.rule_id === f.rule_id) === i)
-                .map((f) => <Badge key={f.rule_id} tone="neutral" title={f.rule_id}>{f.rule_title}</Badge>)}</dd></div>
-          </dl>
+      <div className="space-y-6 lg:col-span-2">
+        <Card>
+          <CardHeader title="What happened" />
+          <CardBody className="space-y-4">
+            <p className="text-sm text-ink-2">{inc.description}</p>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+              <div><dt className="text-xs text-muted">Affected users</dt>
+                <dd className="mt-0.5 flex flex-wrap gap-1.5">{inc.involved_users.map((u) => <Mono key={u}>{u}</Mono>)}</dd></div>
+              <div><dt className="text-xs text-muted">Affected hosts</dt>
+                <dd className="mt-0.5 flex flex-wrap gap-x-2 gap-y-1">{inc.involved_hosts.map((h) => <Mono key={h}>{h}</Mono>)}</dd></div>
+              <div><dt className="text-xs text-muted">Evidence events</dt><dd className="tabular mt-0.5 text-ink">{inc.evidence_count}</dd></div>
+              <div><dt className="text-xs text-muted">Detection findings</dt><dd className="tabular mt-0.5 text-ink">{inc.finding_count} across {inc.rule_ids.length} rules</dd></div>
+            </dl>
+          </CardBody>
+        </Card>
+        <DetectionTab inc={inc} />
+      </div>
+      <Card>
+        <CardHeader title="Before you decide" description="What the detection cannot tell you" />
+        <CardBody className="space-y-5">
+          <section><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Possible benign explanations</h3><List items={inc.benign_explanations} initial={3} /></section>
+          <section><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Missing information</h3><List items={inc.missing_information} initial={3} /></section>
+          <section><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Limitations</h3><List items={inc.limitations} initial={3} /></section>
         </CardBody>
-      </Card>
-      <Card>
-        <CardHeader title="Possible benign explanations" description="From the detection rules" />
-        <CardBody><List items={inc.benign_explanations} /></CardBody>
-      </Card>
-      <Card className="lg:col-span-2">
-        <CardHeader title="Limitations" />
-        <CardBody><List items={inc.limitations} /></CardBody>
-      </Card>
-      <Card>
-        <CardHeader title="Missing information" />
-        <CardBody><List items={inc.missing_information} /></CardBody>
       </Card>
     </div>
   );
@@ -203,7 +201,29 @@ export function EventDetails({ e }: { e: EventView }) {
   );
 }
 
-function EvidenceTab({ inc }: { inc: IncidentDetail }) {
+function EvidenceTab({ inc, onMore }: { inc: IncidentDetail; onMore: () => void }) {
+  const [view, setView] = useState<"timeline" | "table">("timeline");
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div role="group" aria-label="Evidence view" className="inline-flex rounded-md border border-border bg-surface p-0.5">
+          {(["timeline", "table"] as const).map((v) => (
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
+              className={cn("rounded px-3 py-1 text-xs font-medium", view === v ? "bg-brand text-white" : "text-ink-2 hover:bg-subtle")}>
+              {v === "timeline" ? "Timeline" : "Table"}
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={onMore} className="text-xs font-medium text-brand hover:underline">
+          Ask the agents for more evidence
+        </button>
+      </div>
+      {view === "timeline" ? <TimelineTab inc={inc} /> : <EvidenceTable inc={inc} />}
+    </div>
+  );
+}
+
+function EvidenceTable({ inc }: { inc: IncidentDetail }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <Card>
@@ -239,15 +259,28 @@ function EvidenceTab({ inc }: { inc: IncidentDetail }) {
   );
 }
 
-const TABS = ["overview", "timeline", "detection", "evidence", "graph", "risk", "investigation", "provenance"];
+const TABS = ["overview", "agents", "evidence", "graph", "risk", "investigation", "provenance"];
+// Links made before the tabs were merged keep working.
+const LEGACY_TABS: Record<string, string> = { timeline: "evidence", detection: "overview" };
 
 export function IncidentDetailPage() {
   const { incidentId = "" } = useParams();
   const [params, setParams] = useSearchParams();
-  const tab = TABS.includes(params.get("tab") ?? "") ? params.get("tab")! : "overview";
+  const requested = params.get("tab") ?? "";
+  const named = LEGACY_TABS[requested] ?? requested;
+  const tab = TABS.includes(named) ? named : "overview";
+  const contextParam = Number(params.get("context"));
+  const contextWindow = WINDOWS.includes(contextParam as ContextWindow) ? contextParam as ContextWindow : null;
   const setTab = (value: string) => {
     const next = new URLSearchParams(params);
     if (value === "overview") next.delete("tab"); else next.set("tab", value);
+    setParams(next, { replace: true });
+  };
+  // "More evidence": the agents re-run over the chosen window (none = standard run).
+  const showContext = (window: ContextWindow | null) => {
+    const next = new URLSearchParams(params);
+    next.set("tab", "agents");
+    if (window === null) next.delete("context"); else next.set("context", String(window));
     setParams(next, { replace: true });
   };
   const { source, setSource } = useSource();
@@ -281,6 +314,7 @@ export function IncidentDetailPage() {
             <h1 className="font-mono text-xl font-semibold tracking-tight text-ink">{inc.incident_id}</h1>
             {inc.provenance.map((p) => <ProvenanceBadge key={p} provenance={p} long />)}
             <InvestigationBadge status={inc.investigation_status} />
+            <ReviewBadge status={inc.review_status} />
           </div>
           <p className="mt-1.5 text-sm text-muted">
             <span className="font-medium text-ink-2">{inc.principal_user}</span> · {inc.first_seen_label} → {inc.last_seen_label}
@@ -298,21 +332,21 @@ export function IncidentDetailPage() {
         </div>
       </div>
 
+      <div className="mb-5"><DecisionPanel sourceKey={key} incidentId={inc.incident_id} onEvidence={showContext} /></div>
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList aria-label="Incident sections" className="overflow-x-auto">
-          <TabsTrigger value="overview"><ClipboardList aria-hidden />Overview</TabsTrigger>
-          <TabsTrigger value="timeline"><GitBranch aria-hidden />Timeline</TabsTrigger>
-          <TabsTrigger value="detection"><ShieldAlert aria-hidden />Detection analysis</TabsTrigger>
+          <TabsTrigger value="overview"><ClipboardList aria-hidden />Summary</TabsTrigger>
+          <TabsTrigger value="agents"><Workflow aria-hidden />Agents</TabsTrigger>
           <TabsTrigger value="evidence"><FileText aria-hidden />Evidence</TabsTrigger>
           <TabsTrigger value="graph"><Network aria-hidden />Attack graph</TabsTrigger>
           <TabsTrigger value="risk"><Gauge aria-hidden />Risk &amp; response</TabsTrigger>
           <TabsTrigger value="investigation"><ScanSearch aria-hidden />AI investigation</TabsTrigger>
           <TabsTrigger value="provenance"><FileCheck2 aria-hidden />Provenance</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview"><OverviewTab inc={inc} /></TabsContent>
-        <TabsContent value="timeline"><TimelineTab inc={inc} /></TabsContent>
-        <TabsContent value="detection"><DetectionTab inc={inc} /></TabsContent>
-        <TabsContent value="evidence"><EvidenceTab inc={inc} /></TabsContent>
+        <TabsContent value="overview"><SummaryTab inc={inc} /></TabsContent>
+        <TabsContent value="agents"><AgentsTab sourceKey={key} incidentId={inc.incident_id} window={contextWindow} onWindow={showContext} /></TabsContent>
+        <TabsContent value="evidence"><EvidenceTab inc={inc} onMore={() => showContext(24)} /></TabsContent>
         <TabsContent value="graph"><AttackGraphTab sourceKey={key} inc={inc} /></TabsContent>
         <TabsContent value="risk"><RiskResponseTab sourceKey={key} inc={inc} /></TabsContent>
         <TabsContent value="investigation"><IncidentInvestigation sourceKey={key} incidentId={inc.incident_id} /></TabsContent>

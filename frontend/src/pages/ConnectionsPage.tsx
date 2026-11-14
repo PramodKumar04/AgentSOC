@@ -1,4 +1,4 @@
-// Administrators connect organisational databases (PostgreSQL), map their columns, and
+// Administrators connect organisational databases (PostgreSQL or MySQL), map their columns, and
 // control synchronisation and AI permission. Every rule is enforced by the server; this page
 // collects input and shows results. Passwords are sent once and never shown again.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ import { EmptyState, ErrorState, LoadingBlock } from "@/components/ui/states";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import {
   api, type AdminOrgSource, type ConnectionReport, type DbColumn, type FieldMapping, type MappedField,
-  type Mapping, type MappingPreview, type PgConnection, type SslMode, type TableName, type TimestampFormat,
+  type Engine, type Mapping, type MappingPreview, type PgConnection, type SslMode, type TableName, type TimestampFormat,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/utils";
@@ -67,12 +67,15 @@ function parseValueMap(text: string): Record<string, string> {
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 31);
 
+const ENGINE_NAME: Record<Engine, string> = { postgresql: "PostgreSQL", mysql: "MySQL" };
+
 interface FieldChoice { column: string; constant: string; confirmed: boolean; values: string }
 const emptyChoice: FieldChoice = { column: "", constant: "", confirmed: false, values: "" };
 
 function NewSourceWizard({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
-  const [conn, setConn] = useState<PgConnection>({ host: "", port: 5432, database: "", username: "", sslmode: "verify-full" });
+  const [conn, setConn] = useState<PgConnection>({ engine: "postgresql", host: "", port: 5432, database: "", username: "", sslmode: "verify-full" });
+  const engineName = ENGINE_NAME[conn.engine ?? "postgresql"];
   const [password, setPassword] = useState("");
   const [report, setReport] = useState<ConnectionReport | null>(null);
   const [tables, setTables] = useState<TableName[] | null>(null);
@@ -139,13 +142,24 @@ function NewSourceWizard({ onDone }: { onDone: () => void }) {
 
   return (
     <Card>
-      <CardHeader title="Connect a PostgreSQL database" description="Read-only. Use an account that is granted SELECT on one table only." />
+      <CardHeader title={`Connect a ${engineName} database`} description="Read-only. Use an account that is granted SELECT on one table only." />
       <CardBody className="space-y-8">
         <form className="space-y-4" onSubmit={(e: FormEvent) => { e.preventDefault(); test.mutate(); }}>
           <h3 className="text-sm font-semibold text-ink">1. Connection</h3>
           <div className="grid gap-4 md:grid-cols-2">
             <Field id="ds-name" label="Name shown to analysts" hint={name ? `Key: ${slug(name) || "—"}` : undefined}>
               <Input id="ds-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} className="w-full" />
+            </Field>
+            <Field id="ds-engine" label="Database type">
+              <Select id="ds-engine" value={conn.engine ?? "postgresql"} onChange={(e) => {
+                const engine = e.target.value as Engine;
+                // Each engine's default port, and verify-full, which every engine supports.
+                setConn({ ...conn, engine, port: engine === "mysql" ? 3306 : 5432, sslmode: "verify-full" });
+                reset("conn");
+              }} className="w-full">
+                <option value="postgresql">PostgreSQL</option>
+                <option value="mysql">MySQL</option>
+              </Select>
             </Field>
             <Field id="ds-host" label="Host">
               <Input id="ds-host" value={conn.host} onChange={(e) => { setConn({ ...conn, host: e.target.value.trim() }); reset("conn"); }}
@@ -172,7 +186,7 @@ function NewSourceWizard({ onDone }: { onDone: () => void }) {
                 <option value="verify-full">Verify server certificate and name (recommended)</option>
                 <option value="verify-ca">Verify server certificate</option>
                 <option value="require">Encrypt, do not verify the server</option>
-                <option value="prefer">Encrypt if possible (test networks only)</option>
+                {conn.engine !== "mysql" && <option value="prefer">Encrypt if possible (test networks only)</option>}
                 <option value="disable">No encryption (test networks only)</option>
               </Select>
             </Field>
@@ -180,7 +194,7 @@ function NewSourceWizard({ onDone }: { onDone: () => void }) {
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" variant="primary" disabled={test.isPending}>{test.isPending ? "Testing…" : "Test connection"}</Button>
             {report && <span className="inline-flex items-center gap-1.5 text-sm text-ok" role="status"><CheckCircle2 className="size-4" aria-hidden />
-              Connected to PostgreSQL {report.server_version} as {report.account}{report.read_only_session ? ", read-only session" : ""}</span>}
+              Connected to {engineName} {report.server_version} as {report.account}{report.read_only_session ? ", read-only session" : ""}</span>}
           </div>
           <Problem error={test.error} />
           {report && <Warnings items={report.warnings} />}
@@ -448,7 +462,7 @@ export function ConnectionsPage() {
       </div>
       {adding
         ? <NewSourceWizard onDone={() => { setAdding(false); void client.invalidateQueries({ queryKey: ["admin", "datasources"] }); }} />
-        : <Button variant="primary" onClick={() => setAdding(true)}>Connect a PostgreSQL database</Button>}
+        : <Button variant="primary" onClick={() => setAdding(true)}>Connect a database</Button>}
     </>
   );
 }

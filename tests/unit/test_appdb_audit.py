@@ -99,7 +99,7 @@ def test_upgrade_from_phase_a_keeps_accounts(tmp_path):
     conn.execute("PRAGMA user_version = 1")
     conn.commit()
     conn.close()
-    assert appdb.migrate(path) == appdb.SCHEMA_VERSION == 2
+    assert appdb.migrate(path) == appdb.SCHEMA_VERSION == 4
     with appdb.reader(path) as c:
         assert [r[0] for r in c.execute("SELECT username FROM users")] == ["alice"]
         assert c.execute("SELECT COUNT(*) FROM data_sources").fetchone()[0] == 0

@@ -21,6 +21,7 @@ export interface IncidentSummary {
   first_seen: string; last_seen: string; first_seen_label: string; last_seen_label: string;
   provenance: Provenance[]; evidence_count: number; investigation_status: InvestigationStatus;
   risk_score?: number | null; risk_band?: Severity | null;
+  review_status?: ReviewStatus;
 }
 
 export interface EventView {
@@ -52,6 +53,73 @@ export interface Overview {
   activity: { label: string; count: number }[];
   recent_incidents: IncidentSummary[];
   risk_status?: AssessmentStatus; risk_counts?: Record<Severity, number> | null; risk_assessed?: number;
+  review_counts?: Partial<Record<ReviewStatus, number>>;
+}
+
+// Human in the loop: the analyst's decision on an incident.
+export type ReviewStatus = "open" | "accepted" | "dismissed" | "more_evidence";
+export type ReviewDecision = "accepted" | "dismissed" | "more_evidence" | "reopened";
+export type DismissReason = "expected_activity" | "false_positive" | "duplicate" | "authorised_test" | "other";
+export type ContextWindow = 1 | 6 | 24 | 72;
+export interface ReviewEntry {
+  decision: ReviewDecision; reason: DismissReason | null; note: string | null; window_hours: number | null;
+  analyst: string; created_at: string; current_version: boolean;
+}
+export interface ReviewState { status: ReviewStatus; latest: ReviewEntry | null; history: ReviewEntry[] }
+export interface ReviewRequest { decision: ReviewDecision; reason?: DismissReason; note?: string; window_hours?: ContextWindow }
+export interface ContextView {
+  window_hours: number; window_start_label: string; window_end_label: string; account: string;
+  account_events: number; account_failures: number; account_before: number; account_after: number;
+  account_src_hosts: string[]; account_dst_hosts: string[]; account_first_seen_label: string | null;
+  events: EventView[]; events_truncated: boolean;
+  hosts: { host: string; events: number; failures: number; other_accounts: { label: string; count: number }[] }[];
+  pairs: { src_host: string; dst_host: string; before: number; first_seen_label: string | null; after: number }[];
+  related: { incident_id: string; principal_user: string; severity: Severity; first_seen_label: string;
+             last_seen_label: string; relation: string; review_status: ReviewStatus }[];
+  observations: string[]; limitations: string[];
+}
+// Specialised agents (identity, network/host, threat intelligence, endpoint) and correlation.
+export type Stance = "suspicious" | "benign" | "context";
+export interface AgentFinding {
+  statement: string; stance: Stance; strength: "weak" | "moderate" | "strong";
+  accounts: string[]; hosts: string[]; event_ids: string[];
+  techniques: { id: string; name: string | null; url: string }[]; expanded: boolean;
+}
+export interface AgentReport {
+  agent: string; title: string; purpose: string;
+  status: "completed" | "no_findings" | "unavailable" | "failed";
+  examined: string[]; findings: AgentFinding[]; gaps: string[]; duration_ms: number;
+}
+export interface AgentAnalysis {
+  incident_id: string; source_key: string; mode: "standard" | "expanded"; window_hours: number | null;
+  generated_at: string; duration_ms: number; agents: AgentReport[];
+  correlation: {
+    summary: string; corroborated: string[]; conflicts: string[];
+    techniques: { id: string; name: string | null; url: string }[]; open_questions: string[];
+    unavailable_agents: string[]; counts: Record<string, number>;
+    entities: { kind: "account" | "host"; name: string; suspicious_agents: string[]; benign_agents: string[]; findings: number }[];
+  };
+  response_plan?: ResponsePlan | null;
+}
+
+/** How to stop the activity. Recommendations only: AgentSOC executes nothing. */
+export interface ResponsePlan {
+  posture: "contain_now" | "verify_first" | "monitor" | "closed";
+  summary: string; notes: string[];
+  steps: {
+    phase: "contain" | "investigate" | "recover" | "prevent"; action: string; target: string | null; why: string;
+    based_on: string[]; action_type: string | null; risk_engine_proposed: boolean; disruptive: boolean;
+  }[];
+}
+
+export interface ReportView {
+  generated_at: string; generated_by: string; source_label: string; dataset_label: string;
+  dataset_sha256: string; detection_engine: string; incident: IncidentDetail; review: ReviewState;
+  risk: RiskView | null; risk_unavailable: string | null;
+  paths: { path_id: string; kind: string; verdict: string; hosts: string[]; accounts: string[]; reasons: string[] }[];
+  paths_unavailable: string | null; investigation: InvestigationView | null; context: ContextView | null;
+  agents?: AgentAnalysis | null;
+  notices: string[];
 }
 
 export interface EvidenceRef {
@@ -249,8 +317,9 @@ export interface AdminUser {
 
 // Organisational databases. Passwords are sent, never received.
 export type SslMode = "verify-full" | "verify-ca" | "require" | "prefer" | "disable";
+export type Engine = "postgresql" | "mysql";
 export interface PgConnection {
-  host: string; port: number; database: string; username: string; sslmode: SslMode;
+  engine?: Engine; host: string; port: number; database: string; username: string; sslmode: SslMode;
   connect_timeout_seconds?: number; statement_timeout_ms?: number;
 }
 export type MappedField = "src_user" | "dst_user" | "src_host" | "dst_host" | "auth_type" | "logon_type" | "orientation" | "outcome";
@@ -344,6 +413,23 @@ export const api = {
     request<IncidentDetail>("GET", `/incidents/${encodeURIComponent(id)}`, { source }),
   savedInvestigation: (source: string, id: string) =>
     request<InvestigationView>("GET", `/incidents/${encodeURIComponent(id)}/investigation`, { source }),
+  review: (source: string, id: string) =>
+    request<ReviewState>("GET", `/incidents/${encodeURIComponent(id)}/review`, { source }),
+  submitReview: (source: string, id: string, body: ReviewRequest) =>
+    request<ReviewState>("POST", `/incidents/${encodeURIComponent(id)}/review`, { source }, body),
+  context: (source: string, id: string, window_hours: ContextWindow) =>
+    request<ContextView>("GET", `/incidents/${encodeURIComponent(id)}/context`, { source, window_hours }),
+  agents: (source: string, id: string, window_hours: ContextWindow | null) =>
+    request<AgentAnalysis>("GET", `/incidents/${encodeURIComponent(id)}/agents`, { source, window_hours }),
+  report: (source: string, id: string) =>
+    request<ReportView>("GET", `/incidents/${encodeURIComponent(id)}/report`, { source }),
+  reportMarkdown: async (source: string, id: string): Promise<Blob> => {
+    const response = await fetch(`/api/incidents/${encodeURIComponent(id)}/report.md${toSearch({ source })}`,
+                                 { credentials: "same-origin" });
+    if (response.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    if (!response.ok) throw new ApiError(response.status, `Export failed (${response.status}).`);
+    return response.blob();
+  },
   investigate: (source: string, id: string, rerun: boolean) =>
     request<InvestigationView>("POST", `/incidents/${encodeURIComponent(id)}/investigate`,
       { source, rerun }),

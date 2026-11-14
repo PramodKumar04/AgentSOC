@@ -3,7 +3,8 @@ import { Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
-import { InvestigationBadge, ProvenanceBadge, RiskBadge, SeverityBadge } from "@/components/domain";
+import { InvestigationBadge, RiskBadge, SeverityBadge } from "@/components/domain";
+import { ReviewBadge, STATUS_TEXT } from "@/components/review";
 import { PageHeader } from "@/components/layout/app-shell";
 import { useSource } from "@/components/layout/source-context";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Input, Select } from "@/components/ui/form";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState, ErrorState, LoadingBlock } from "@/components/ui/states";
 import { SortableTh, Table, Td, Th, Tr } from "@/components/ui/table";
-import { api, type Severity } from "@/lib/api";
+import { api, type ReviewStatus, type Severity } from "@/lib/api";
 import { cn, SEVERITIES, titleCase } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
@@ -38,6 +39,7 @@ export function IncidentsPage() {
   const sort = (params.get("sort") ?? "severity") as SortKey;
   const order = (params.get("order") ?? "asc") as "asc" | "desc";
   const page = Number(params.get("page") ?? "1") || 1;
+  const review = (params.get("review") ?? "") as ReviewStatus | "";
 
   const update = (patch: Record<string, string | string[] | null>) => {
     const next = new URLSearchParams(params);
@@ -56,11 +58,14 @@ export function IncidentsPage() {
 
   const key = source!.key;
   const query = useQuery({
-    queryKey: ["incidents", key, q, severities, provenance, sort, order, page],
+    queryKey: ["incidents", key, q, severities, provenance, review, sort, order, page],
     queryFn: () => api.incidents(key, { q, severity: severities, provenance: provenance || null,
-                                        sort, order, page, page_size: PAGE_SIZE }),
+                                        review: review || null, sort, order, page, page_size: PAGE_SIZE }),
     placeholderData: keepPreviousData,
   });
+  const overview = useQuery({ queryKey: ["overview", key], queryFn: () => api.overview(key) });
+  const counts = overview.data?.review_counts ?? {};
+  const total = overview.data?.incidents_total;
 
   const toggleSeverity = (s: Severity) =>
     update({ severity: severities.includes(s) ? severities.filter((x) => x !== s) : [...severities, s] });
@@ -70,7 +75,17 @@ export function IncidentsPage() {
 
   return (
     <>
-      <PageHeader title="Incidents" description="Correlated authentication incidents produced by deterministic detection. Suspicious activity — not confirmed compromise." />
+      <PageHeader title="Incidents" description="Your review queue. Each incident is suspicious activity, not confirmed compromise, until an analyst decides." />
+      <div role="group" aria-label="Filter by decision" className="mb-4 flex flex-wrap gap-1 border-b border-border">
+        {([["", "All", total], ["open", STATUS_TEXT.open, counts.open], ["more_evidence", STATUS_TEXT.more_evidence, counts.more_evidence],
+           ["accepted", STATUS_TEXT.accepted, counts.accepted], ["dismissed", STATUS_TEXT.dismissed, counts.dismissed]] as const).map(([value, label, n]) => (
+          <button key={value || "all"} type="button" aria-pressed={review === value} onClick={() => update({ review: value || null })}
+            className={cn("-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+              review === value ? "border-brand text-brand" : "border-transparent text-muted hover:text-ink")}>
+            {label}{n !== undefined && <span className="ml-1.5 rounded-full bg-subtle px-1.5 text-xs tabular text-ink-2">{n}</span>}
+          </button>
+        ))}
+      </div>
       <Card>
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
           <div className="relative min-w-56 flex-1 sm:max-w-sm">
@@ -118,9 +133,8 @@ export function IncidentsPage() {
                     <Th>Risk</Th>
                     <SortableTh label="Findings" active={sort === "findings"} order={order} onSort={() => sortBy("findings")} />
                     <Th>Affected hosts</Th>
-                    <SortableTh label="First observed" active={sort === "first_seen"} order={order} onSort={() => sortBy("first_seen")} />
                     <SortableTh label="Last observed" active={sort === "last_seen"} order={order} onSort={() => sortBy("last_seen")} />
-                    <Th>Source</Th>
+                    <Th>Decision</Th>
                     <Th>Investigation</Th>
                   </tr>
                 </thead>
@@ -139,9 +153,8 @@ export function IncidentsPage() {
                       <Td className="max-w-44 truncate" title={i.involved_hosts.join(", ")}>
                         {i.involved_hosts.slice(0, 2).join(", ")}{i.involved_hosts.length > 2 && <span className="text-faint"> +{i.involved_hosts.length - 2}</span>}
                       </Td>
-                      <Td className="tabular whitespace-nowrap text-muted">{i.first_seen_label}</Td>
-                      <Td className="tabular whitespace-nowrap text-muted">{i.last_seen_label}</Td>
-                      <Td>{i.provenance.map((p) => <ProvenanceBadge key={p} provenance={p} />)}</Td>
+                      <Td className="tabular whitespace-nowrap text-muted" title={`First observed ${i.first_seen_label}`}>{i.last_seen_label}</Td>
+                      <Td><ReviewBadge status={i.review_status} /></Td>
                       <Td><InvestigationBadge status={i.investigation_status} /></Td>
                     </Tr>
                   ))}

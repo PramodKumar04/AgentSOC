@@ -11,11 +11,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field, SecretStr, StringConstraints
+from pydantic import BaseModel, Field, SecretStr, StringConstraints, model_validator
 
 from agentsoc.auth.api import AdminUser, current_user, require_admin, require_csrf
 from agentsoc.connectors.base import ConnectorError, TableRef
-from agentsoc.connectors.postgres import PostgresSettings
+from agentsoc.connectors.settings import ConnectionSettings, with_engine
 from agentsoc.credentials import CredentialError, CredentialStoreUnavailableError
 from agentsoc.ingest.mapping import ColumnName, MappingSpec
 from agentsoc.orgsource.manager import DataSourceManager, SourceStatus
@@ -32,9 +32,17 @@ AI_WARNING = ("Investigating an incident from this source with AI sends the inci
 
 
 class ConnectionBody(BaseModel):
-    connection: PostgresSettings
+    connection: ConnectionSettings
     password: Password | None = None
     key: SourceKey | None = None  # use the stored password of this source
+
+    @model_validator(mode="before")
+    @classmethod
+    def _engine_default(cls, data: object) -> object:
+        # Requests from before MySQL support carry no engine: they mean PostgreSQL.
+        if isinstance(data, dict) and isinstance(data.get("connection"), dict):
+            data = {**data, "connection": with_engine(data["connection"])}
+        return data
 
 
 class TableBody(ConnectionBody):
@@ -161,7 +169,7 @@ class OrgSourceView(BaseModel):
 
 
 class AdminSourceView(OrgSourceView):
-    connection: PostgresSettings
+    connection: ConnectionSettings
     table: TableView
     cursor_column: str
     lookback: int

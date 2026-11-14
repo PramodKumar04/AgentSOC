@@ -42,6 +42,7 @@ _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")
 
 
 class PostgresSettings(Contract):
+    engine: Literal["postgresql"] = "postgresql"
     host: Host
     port: int = Field(default=5432, ge=1, le=65535)
     database: Name

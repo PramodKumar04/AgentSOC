@@ -63,7 +63,47 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL
     );
     """,
+    # 3: analyst decisions on incidents (append-only; the latest row is the current state)
+    """
+    CREATE TABLE incident_reviews (
+        id INTEGER PRIMARY KEY,
+        source_key TEXT NOT NULL,
+        incident_id TEXT NOT NULL,
+        incident_sha256 TEXT NOT NULL,
+        decision TEXT NOT NULL
+            CHECK (decision IN ('accepted', 'dismissed', 'more_evidence', 'reopened')),
+        reason TEXT,
+        note TEXT,
+        window_hours INTEGER,
+        analyst TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX incident_reviews_lookup ON incident_reviews(source_key, incident_id, id);
+    """,
 ]
+# 4: allow MySQL sources. SQLite cannot change a CHECK constraint, so the table is rebuilt; no
+# other table refers to data_sources, and every existing row is copied unchanged.
+MIGRATIONS.append(
+    """
+    CREATE TABLE data_sources_v4 (
+        key TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('postgresql', 'mysql')),
+        config TEXT NOT NULL,
+        credential_ref TEXT NOT NULL,
+        sync_enabled INTEGER NOT NULL DEFAULT 0,
+        ai_enabled INTEGER NOT NULL DEFAULT 0,
+        ai_changed_by TEXT,
+        ai_changed_at TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    INSERT INTO data_sources_v4 SELECT * FROM data_sources;
+    DROP TABLE data_sources;
+    ALTER TABLE data_sources_v4 RENAME TO data_sources;
+    """
+)
 SCHEMA_VERSION = len(MIGRATIONS)
 
 
